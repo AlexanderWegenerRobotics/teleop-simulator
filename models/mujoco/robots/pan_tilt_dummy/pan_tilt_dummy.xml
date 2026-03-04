@@ -1,0 +1,44 @@
+<mujoco model="pan_tilt">
+    <compiler angle="radian" autolimits="true"/>
+    <option integrator="implicitfast"/>
+
+    <default>
+        <joint armature="0.5" damping="2"/>
+        <general forcerange="-10 10"/>
+    </default>
+
+    <worldbody>
+
+        <!-- Base plate: fixed anchor -->
+        <body name="base" pos="0 0 0">
+            <geom type="box" size="0.05 0.05 0.04" pos="0 0 0.04" rgba="0.25 0.25 0.25 1" mass="0.5"/>
+
+            <!-- Pan link: rotates around Z (yaw).-->
+            <body name="link_1" pos="0 0 0.08">
+                <joint name="pan_joint" type="hinge" axis="0 0 1" range="-2.78 2.78"/>
+                <geom type="cylinder" size="0.03 0.08" pos="0 0 0" rgba="0.55 0.35 0.1 1" mass="0.3"/>
+
+                <!-- Tilt link: rotates around Y (tilt). -->
+                <body name="link_2" pos="0 0 0.06">
+                    <joint name="tilt_joint" type="hinge" axis="0 -1 0" range="-1.57 1.57"/>
+                    <geom type="box" size="0.05 0.04 0.035" pos="0 0 0.035" rgba="0.15 0.35 0.6 1" mass="0.5"/>
+
+                    <!-- Camera site at front face of tilt box -->
+                    <camera name="head_cam" pos="0.05 0 0.035" euler="1.5708 -1.5708 0" fovy="60"/>
+                    <site name="camera_site" pos="0.05 0 0.035" size="0.007" rgba="1 0 0 1"/>
+                </body>
+            </body>
+        </body>
+    </worldbody>
+
+    <actuator>
+        <motor name="pan_joint"  joint="pan_joint"  forcerange="-10 10" ctrlrange="-10 10"/>
+        <motor name="tilt_joint" joint="tilt_joint" forcerange="-10 10" ctrlrange="-10 10"/>
+    </actuator>
+
+    <contact>
+        <exclude body1="base"   body2="link_1"/>
+        <exclude body1="link_1" body2="link_2"/>
+    </contact>
+
+</mujoco>
