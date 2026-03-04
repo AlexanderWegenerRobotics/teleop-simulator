@@ -1,28 +1,24 @@
 cmake_minimum_required(VERSION 3.20)
 cmake_policy(SET CMP0167 NEW)
-
 project(avatar VERSION 0.1.0)
 
-# ── Options ───────────────────────────────────────────────────────────────────
 option(BUILD_WITH_FRANKA "Build with real Franka hardware support" OFF)
 option(BUILD_WITH_MUJOCO "Build with MuJoCo simulation"            ON)
+option(BUILD_STREAMER    "Build video streamer"                     OFF)
 
-# ── C++ standard ──────────────────────────────────────────────────────────────
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_definitions(-DCOAL_DISABLE_HPP_FCL_WARNINGS)
 
-# ── Dependencies ──────────────────────────────────────────────────────────────
 find_package(yaml-cpp REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Poco REQUIRED COMPONENTS Net Foundation)
-find_package(HDF5 REQUIRED COMPONENTS CXX)
+find_package(PkgConfig REQUIRED)
 
 if(BUILD_WITH_MUJOCO)
     find_package(tinyxml2 REQUIRED)
     find_package(glfw3 REQUIRED)
-
     set(MUJOCO_ROOT "$ENV{HOME}/Workspace/tools/mujoco")
     add_library(mujoco SHARED IMPORTED)
     set_target_properties(mujoco PROPERTIES
@@ -37,7 +33,14 @@ if(BUILD_WITH_FRANKA)
     find_package(Franka REQUIRED)
 endif()
 
-# ── Sources ───────────────────────────────────────────────────────────────────
+if(BUILD_STREAMER)
+    pkg_check_modules(GST REQUIRED
+        gstreamer-1.0
+        gstreamer-app-1.0
+        gstreamer-video-1.0
+    )
+endif()
+
 set(SOURCES
     src/main.cpp
     src/avatar.cpp
@@ -58,7 +61,6 @@ if(BUILD_WITH_MUJOCO)
     )
 endif()
 
-# ── Target ────────────────────────────────────────────────────────────────────
 add_executable(${PROJECT_NAME} ${SOURCES})
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
@@ -72,10 +74,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${MUJOCO_ROOT}
     ${GLFW_INCLUDE_DIRS}
     ${Poco_INCLUDE_DIRS}
-    ${HDF5_INCLUDE_DIRS}
 )
 
-# ── Link & definitions ────────────────────────────────────────────────────────
 target_link_libraries(${PROJECT_NAME} PRIVATE
     Boost::filesystem
     yaml-cpp::yaml-cpp
@@ -84,7 +84,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     glfw
     Poco::Net
     Poco::Foundation
-    ${HDF5_CXX_LIBRARIES}
 )
 
 if(BUILD_WITH_MUJOCO)
@@ -95,4 +94,24 @@ endif()
 if(BUILD_WITH_FRANKA)
     target_link_libraries(${PROJECT_NAME} PRIVATE Franka::Franka)
     target_compile_definitions(${PROJECT_NAME} PRIVATE WITH_FRANKA)
+endif()
+
+if(BUILD_STREAMER)
+    add_executable(avatar_streamer
+        src/streamer/streamer_main.cpp
+        src/streamer/video_streamer.cpp
+        src/streamer/camera_source.cpp
+    )
+
+    target_include_directories(avatar_streamer PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${GST_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(avatar_streamer PRIVATE
+        yaml-cpp::yaml-cpp
+        ${GST_LIBRARIES}
+    )
+
+    target_compile_definitions(avatar_streamer PRIVATE BUILD_STREAMER)
 endif()

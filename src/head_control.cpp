@@ -52,6 +52,7 @@ void HeadControl::start(){
 }
 
 void HeadControl::stop(){
+    if (logger_) logger_->stop(); 
     bRunning = false;
     if (control_thread.joinable()) control_thread.join();
     if (state_thread.joinable()) state_thread.join();
@@ -177,7 +178,7 @@ void HeadControl::runControlHandler() {
             auto now = std::chrono::high_resolution_clock::now();
             double dt = std::chrono::duration<double>(now - current_state.last_dq_update).count();
 
-            Vector2 dq = Vector2::Zero();
+            Vector2 dq = current_state.dq;
             if (dt > 1e-4) {
                 Vector2 dq_raw = (q - current_state.q) / dt;    
                 std::lock_guard<std::mutex> lock(state_mtx);
