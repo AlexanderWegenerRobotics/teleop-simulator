@@ -45,5 +45,7 @@ private:
     uint64_t          frame_count_ = 0;
 
     GstElement* encoder_ = nullptr;
+    GstElement* fec_     = nullptr;
     std::unique_ptr<StreamQualityController> quality_;
+    std::atomic<int> target_fps_{0};
 };

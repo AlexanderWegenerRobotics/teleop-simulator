@@ -11,6 +11,7 @@ VideoStreamer::VideoStreamer(const StreamerConfig& config)
 {
     gst_init(nullptr, nullptr);
     source_ = std::make_unique<MuJoCoSource>(config.shm_name, config.fps);
+    target_fps_.store(config.fps);
 }
 
 VideoStreamer::~VideoStreamer() {
@@ -33,6 +34,9 @@ void VideoStreamer::start() {
     quality_->setOnQualityChange([this](const StreamQualityParams& params) {
         if (encoder_)
             g_object_set(G_OBJECT(encoder_), "bitrate", params.bitrate_kbps, nullptr);
+        if (fec_)
+            g_object_set(G_OBJECT(fec_), "percentage", params.fec_percentage, nullptr);
+        target_fps_.store(params.fps);
     });
     quality_->start();
 
@@ -73,6 +77,8 @@ void VideoStreamer::stop() {
         gst_object_unref(pipeline_);
         pipeline_ = nullptr;
         appsrc_   = nullptr;
+        encoder_  = nullptr;
+        fec_      = nullptr;
     }
 
     if (loop_) {
@@ -97,7 +103,7 @@ void VideoStreamer::buildPipeline() {
         " bitrate="     + std::to_string(config_.bitrate_kbps) +
         " key-int-max=30"
         " ! rtph264pay pt=96"
-        " ! rtpulpfecenc percentage=" + std::to_string(config_.fec_percentage) +
+        " ! rtpulpfecenc name=fec percentage=" + std::to_string(config_.fec_percentage) +
         " ! udpsink host=" + config_.host +
         " port="           + std::to_string(config_.port);
 
@@ -119,6 +125,10 @@ void VideoStreamer::buildPipeline() {
     if (!encoder_)
         throw std::runtime_error("Failed to get encoder element from pipeline");
 
+    fec_ = gst_bin_get_by_name(GST_BIN(pipeline_), "fec");
+    if (!fec_)
+        throw std::runtime_error("Failed to get fec element from pipeline");
+
     gst_app_src_set_stream_type(GST_APP_SRC(appsrc_), GST_APP_STREAM_TYPE_STREAM);
     gst_app_src_set_latency(GST_APP_SRC(appsrc_), 0, -1);
     gst_app_src_set_max_bytes(GST_APP_SRC(appsrc_), 0);
@@ -126,6 +136,15 @@ void VideoStreamer::buildPipeline() {
 
 void VideoStreamer::pushFrame(const uint8_t* rgb, uint32_t width, uint32_t height) {
     if (!appsrc_ || !bRunning_) return;
+
+    int tfps = target_fps_.load();
+    if (tfps > 0 && tfps < config_.fps) {
+        int skip = config_.fps / tfps;
+        if (frame_count_ % skip != 0) {
+            frame_count_++;
+            return;
+        }
+    }
 
     size_t size = width * height * 3;
 
