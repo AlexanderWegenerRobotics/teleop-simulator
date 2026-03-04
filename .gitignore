@@ -6,6 +6,8 @@ CMakeCache.txt
 cmake_install.cmake
 Makefile
 *.cmake
+.cache/
+**/.cache/
 
 # Compiled objects
 *.o

@@ -198,7 +198,7 @@ void ArmControl::runControlHandler(){
                     break;
 
                 default:
-                break;
+                    ctrl_torque = jointImpedanceControl(robot_state);
             }
             
             std::array<double, 7> ctrl_array;

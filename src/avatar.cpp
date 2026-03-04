@@ -1,16 +1,19 @@
 #include "avatar.hpp"
 #include "common.hpp"
 
+#include <iostream>
+
 Avatar::Avatar(const YAML::Node& config){
 
+    YAML::Node sys_config;
+    #ifndef WITH_FRANKA
+        sys_config = YAML::LoadFile(config["sim_config"].as<std::string>());
+        sim_ = std::make_shared<Simulation>(sys_config);
+    #else
+        sys_config = YAML::LoadFile(config["robot_config"].as<std::string>());
+    #endif
 
-#ifndef WITH_FRANKA
-
-    YAML::Node sim_config = YAML::LoadFile(config["sim_config"].as<std::string>());
-    sim_ = std::make_shared<Simulation>(sim_config);
-
-    // Iterate devices defined in sim_config
-    for (const auto& dev : sim_config["devices"]) {
+    for (const auto& dev : sys_config["devices"]) {
         if (!dev["enabled"].as<bool>(true)) continue;
 
         std::string name = dev["name"].as<std::string>();
@@ -18,23 +21,22 @@ Avatar::Avatar(const YAML::Node& config){
 
         if (type == "arm") {
             ArmControl* arm = new ArmControl(dev);
-            arm->robot->set_simulation(*sim_, dev);
+            if (sim_) arm->robot->set_simulation(*sim_, dev);
             arm_instances.push_back(arm);
         }
         else if (type == "head") {
             HeadControl* head = new HeadControl(dev);
-            head->module->set_simulation(*sim_, dev);
+            if (sim_) head->module->set_simulation(*sim_, dev);
             head_instances.push_back(head);
         }
     }
-#endif
 
-    if (config["transmission"]) {
+    if (sys_config["transmission"]) {
         TransmissionConfig tx_config{
-            .remote_ip    = config["transmission"]["remote_ip"].as<std::string>(),
-            .send_port    = config["transmission"]["send_port"].as<int>(),
-            .receive_port = config["transmission"]["receive_port"].as<int>(),
-            .frequency    = config["transmission"]["frequency"].as<int>(),
+            .remote_ip    = sys_config["transmission"]["remote_ip"].as<std::string>(),
+            .send_port    = sys_config["transmission"]["send_port"].as<int>(),
+            .receive_port = sys_config["transmission"]["receive_port"].as<int>(),
+            .frequency    = sys_config["transmission"]["frequency"].as<int>(),
             .role         = TransmissionRole::AVATAR
         };
         transmission_ = std::make_unique<Transmission>(tx_config);
@@ -53,11 +55,13 @@ void Avatar::start(){
     for(const auto& arm : arm_instances){
         arm->start();
     }
+    std::cout << "[INFO]: All devices started" << std::endl;
 
     constexpr std::chrono::microseconds control_period(static_cast<int>(1e6 / 100));
 	auto next_control_time = std::chrono::high_resolution_clock::now();
 
     SysState cmd_state = SysState::IDLE;
+    state_ = SysState::IDLE;
 
     bRunning = true;
     while(bRunning){

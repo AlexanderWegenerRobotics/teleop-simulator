@@ -3,9 +3,15 @@ rendering:
   fps: 20
 
 simulation:
-  timestep: 0.002
+  timestep: 0.001
   control_frequency: 1000
   model_path: "../models/mujoco/scenes/world_scene.xml"
+
+transmission:
+  remote_ip: "127.0.0.1"
+  send_port: 8000
+  receive_port: 7000
+  frequency: 20
 
 devices:
   - name: arm_left
@@ -21,7 +27,7 @@ devices:
       orientation: [0.5, -0.5,  0.5, -0.5]
     q0: [0.0, -0.785398, 0.0, -2.356194, 0.0, 1.570796, 0.785398]
     transmission:
-      remote_ip: "192.168.1.100"
+      remote_ip: "127.0.0.1"
       send_port: 8001
       receive_port: 7001
       frequency: 200
@@ -39,7 +45,7 @@ devices:
       orientation: [0.5, 0.5, 0.5, 0.5]
     q0: [0.0, -0.785398, 0.0, -2.356194, 0.0, 1.570796, 0.785398]
     transmission:
-      remote_ip: "192.168.1.100"
+      remote_ip: "127.0.0.1"
       send_port: 8002
       receive_port: 7002
       frequency: 200
@@ -54,7 +60,7 @@ devices:
       orientation: [1, 0, 0, 0]
     q0: [0.0, -0.4]
     transmission:
-      remote_ip: "192.168.1.100"
+      remote_ip: "127.0.0.1"
       send_port: 8003
       receive_port: 7003
       frequency: 200
