@@ -12,8 +12,8 @@
 #include <unistd.h>
 
 constexpr int    SHM_N_SLOTS  = 3;
-constexpr size_t SHM_MAX_W    = 1920;
-constexpr size_t SHM_MAX_H    = 1080;
+constexpr size_t SHM_MAX_W = 1280;
+constexpr size_t SHM_MAX_H = 720;
 constexpr size_t SHM_CHANNELS = 3;
 
 struct SharedFrameBuffer {

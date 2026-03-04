@@ -46,6 +46,12 @@ Simulation::Simulation(const YAML::Node& config) {
     if (config["rendering"] && config["rendering"]["fps"])
         render_fps_ = config["rendering"]["fps"].as<int>();
 
+    if (config["rendering"]) {
+        stream_fps_    = config["rendering"]["stream_fps"].as<int>(30);
+        stream_width_  = config["rendering"]["stream_width"].as<int>(model->vis.global.offwidth);
+        stream_height_ = config["rendering"]["stream_height"].as<int>(model->vis.global.offheight);
+    }
+
     snap_[0] = mj_copyData(nullptr, model, data);
     snap_[1] = mj_copyData(nullptr, model, data);
     buildCameraList();
@@ -64,21 +70,32 @@ Simulation::~Simulation() {
 // ---------------------------------------------------------------------------
 
 void Simulation::start() {
-    rendering_thread = std::thread(&Simulation::run_rendering, this);
-    while (!bRenderingIsRunning)
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    if (render_enabled_) {
+        rendering_thread = std::thread(&Simulation::run_rendering, this);
+        while (!bRenderingIsRunning)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    if (shm_enabled_) {
+        stream_thread_ = std::thread(&Simulation::run_streaming, this);
+        while (!bStreamingIsRunning)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
     model_thread = std::thread(&Simulation::run_model, this);
 }
 
 void Simulation::stop() {
     bModelIsRunning     = false;
     bRenderingIsRunning = false;
+    bStreamingIsRunning = false;
     if (model_thread.joinable())     model_thread.join();
     if (rendering_thread.joinable()) rendering_thread.join();
+    if (stream_thread_.joinable())   stream_thread_.join();
 }
 
 bool Simulation::isRunning() const {
-    return bModelIsRunning || bRenderingIsRunning;
+    return bModelIsRunning || bRenderingIsRunning || bStreamingIsRunning;
 }
 
 void Simulation::run_model() {
@@ -103,7 +120,7 @@ void Simulation::run_model() {
 
 
 // ---------------------------------------------------------------------------
-// Rendering
+// Rendering (on-screen window with camera grid)
 // ---------------------------------------------------------------------------
 
 void Simulation::buildCameraList() {
@@ -131,12 +148,6 @@ void Simulation::initRendering() {
     mjv_makeScene(model, &scn_, 2000);
     mjr_defaultContext(&con_);
     mjr_makeContext(model, &con_, mjFONTSCALE_100);
-
-    int win_w, win_h;
-    glfwGetFramebufferSize(window_, &win_w, &win_h);
-
-    if (shm_enabled_)
-        shm_writer_ = std::make_unique<SharedMemoryWriter>("/avatar_cam", win_w, win_h);
 }
 
 void Simulation::run_rendering() {
@@ -200,21 +211,8 @@ void Simulation::renderFrame() {
 
         mjv_updateScene(model, snap, &vopt_, nullptr, &mjcam, mjCAT_ALL, &scn_);
         mjr_render(viewport, &scn_, &con_);
-        mjr_overlay(mjFONT_NORMAL, mjGRID_TOPLEFT, viewport,render_cams_[i].name.c_str(), nullptr, &con_);
-        
-        if (shm_writer_ && render_cams_[i].name == stream_camera_) {
-            std::vector<uint8_t> pixels(cell_w * cell_h * 3);
-            mjrRect vp = {x, y, cell_w, cell_h};
-            mjr_readPixels(pixels.data(), nullptr, vp, &con_);
-
-            for (int row = 0; row < cell_h / 2; ++row) {
-                uint8_t* top = pixels.data() + row * cell_w * 3;
-                uint8_t* bot = pixels.data() + (cell_h - 1 - row) * cell_w * 3;
-                std::swap_ranges(top, top + cell_w * 3, bot);
-            }
-
-            shm_writer_->write(pixels.data(), pixels.size());
-        }
+        mjr_overlay(mjFONT_NORMAL, mjGRID_TOPLEFT, viewport,
+                    render_cams_[i].name.c_str(), nullptr, &con_);
     }
 
     glfwSwapBuffers(window_);
@@ -226,6 +224,90 @@ void Simulation::swapSnapshots() {
     int next = 1 - w;
     snap_write_.store(next, std::memory_order_release);
     snap_read_.store(w,    std::memory_order_release);
+}
+
+
+// ---------------------------------------------------------------------------
+// Offscreen streaming (independent of window rendering)
+// ---------------------------------------------------------------------------
+
+void Simulation::initOffscreenStreaming() {
+    if (!offscreen_window_)
+        throw std::runtime_error("[Streaming] offscreen_window_ is null");
+
+    glfwMakeContextCurrent(offscreen_window_);
+
+    model->vis.global.offwidth  = stream_width_;
+    model->vis.global.offheight = stream_height_;
+
+    mjv_defaultOption(&stream_vopt_);
+    mjv_defaultScene(&stream_scn_);
+    mjv_makeScene(model, &stream_scn_, 2000);
+    mjr_defaultContext(&stream_con_);
+    mjr_makeContext(model, &stream_con_, mjFONTSCALE_100);
+
+    shm_unlink("/avatar_cam");
+    shm_writer_ = std::make_unique<SharedMemoryWriter>("/avatar_cam", stream_width_, stream_height_);
+}
+
+void Simulation::renderStreamFrame() {
+    int cam_id = -1;
+    for (const auto& c : render_cams_) {
+        if (c.name == stream_camera_) { cam_id = c.id; break; }
+    }
+    if (cam_id < 0) return;
+
+    int r = snap_read_.load(std::memory_order_acquire);
+    mjData* snap = snap_[r];
+
+    mjvCamera mjcam;
+    mjv_defaultCamera(&mjcam);
+    mjcam.type       = mjCAMERA_FIXED;
+    mjcam.fixedcamid = cam_id;
+
+    mjrRect viewport = {0, 0, stream_con_.offWidth, stream_con_.offHeight};
+    mjr_setBuffer(mjFB_OFFSCREEN, &stream_con_);
+    mjv_updateScene(model, snap, &stream_vopt_, nullptr, &mjcam, mjCAT_ALL, &stream_scn_);
+    mjr_render(viewport, &stream_scn_, &stream_con_);
+
+    std::vector<uint8_t> pixels(stream_width_ * stream_height_ * 3);
+    mjr_readPixels(pixels.data(), nullptr, viewport, &stream_con_);
+
+    for (int row = 0; row < stream_height_ / 2; ++row) {
+        uint8_t* top = pixels.data() + row * stream_width_ * 3;
+        uint8_t* bot = pixels.data() + (stream_height_ - 1 - row) * stream_width_ * 3;
+        std::swap_ranges(top, top + stream_width_ * 3, bot);
+    }
+
+    shm_writer_->write(pixels.data(), pixels.size());
+}
+
+void Simulation::run_streaming() {
+    try {
+        initOffscreenStreaming();
+    } catch (const std::exception& e) {
+        std::cerr << "[Streaming] " << e.what() << "\n";
+        bStreamingIsRunning = true;
+        return;
+    }
+
+    bStreamingIsRunning = true;
+
+    auto period = std::chrono::microseconds(1000000 / stream_fps_);
+    auto next   = std::chrono::steady_clock::now();
+
+    while (bStreamingIsRunning) {
+        renderStreamFrame();
+        next += period;
+        std::this_thread::sleep_until(next);
+    }
+
+    mjv_freeScene(&stream_scn_);
+    mjr_freeContext(&stream_con_);
+    if (offscreen_window_) {
+        glfwDestroyWindow(offscreen_window_);
+        offscreen_window_ = nullptr;
+    }
 }
 
 

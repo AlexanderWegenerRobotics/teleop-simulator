@@ -32,6 +32,12 @@ int main() {
             if (!sim->window_)
                 throw std::runtime_error("glfwCreateWindow failed");
         }
+        if (sim->shm_enabled_) {
+            glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+            sim->offscreen_window_ = glfwCreateWindow(1, 1, "", nullptr, nullptr);
+            if (!sim->offscreen_window_)
+                throw std::runtime_error("Failed to create offscreen window for streaming");
+        }
 
         sim->start();
         std::thread avatar_thread([&]() {

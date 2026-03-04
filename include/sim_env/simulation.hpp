@@ -82,4 +82,19 @@ public:
     std::vector<CamEntry> render_cams_;
     bool shm_enabled_;
     std::string stream_camera_;
+    GLFWwindow* offscreen_window_ = nullptr;
+
+private:
+    mjvScene    stream_scn_;
+    mjvOption   stream_vopt_;
+    mjrContext  stream_con_;
+    int         stream_width_  = 1280;
+    int         stream_height_ = 720;
+    int         stream_fps_    = 30;
+    std::thread stream_thread_;
+    std::atomic<bool> bStreamingIsRunning{false};
+
+    void run_streaming();
+    void initOffscreenStreaming();
+    void renderStreamFrame();
 };

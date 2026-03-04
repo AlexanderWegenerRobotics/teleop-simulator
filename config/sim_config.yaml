@@ -3,6 +3,9 @@ rendering:
   fps: 30
   streaming: true
   stream_camera: "head_head_cam"
+  stream_fps: 30
+  stream_width: 1280
+  stream_height: 720
 
 simulation:
   timestep: 0.001
