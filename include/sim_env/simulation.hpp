@@ -11,6 +11,7 @@
 #include <mujoco/mjvisualize.h>
 #include <mujoco/mjrender.h>
 
+#include "streamer/shared_memory.hpp"
 #include "sim_env/scene_builder.hpp"
 
 struct DeviceState {
@@ -57,6 +58,7 @@ private:
     std::atomic<bool> bRenderingIsRunning{false};
     std::thread       model_thread;
     std::thread       rendering_thread;
+    std::unique_ptr<SharedMemoryWriter> shm_writer_;
 
 private:
     // Rendering
@@ -78,4 +80,6 @@ public:
     GLFWwindow* window_ = nullptr;
     bool render_enabled_ = false;
     std::vector<CamEntry> render_cams_;
+    bool shm_enabled_;
+    std::string stream_camera_;
 };

@@ -18,6 +18,9 @@
 Simulation::Simulation(const YAML::Node& config) {
     BuiltScene scene = SceneBuilder::build(config);
 
+    shm_enabled_ = config["rendering"] && config["rendering"]["streaming"].as<bool>(false);
+    stream_camera_ = config["rendering"]["stream_camera"].as<std::string>("");
+
     devices_ = std::move(scene.devices);
     objects_ = std::move(scene.objects);
     cameras_ = std::move(scene.cameras);
@@ -131,6 +134,9 @@ void Simulation::initRendering() {
 
     int win_w, win_h;
     glfwGetFramebufferSize(window_, &win_w, &win_h);
+
+    if (shm_enabled_)
+        shm_writer_ = std::make_unique<SharedMemoryWriter>("/avatar_cam", win_w, win_h);
 }
 
 void Simulation::run_rendering() {
@@ -194,8 +200,21 @@ void Simulation::renderFrame() {
 
         mjv_updateScene(model, snap, &vopt_, nullptr, &mjcam, mjCAT_ALL, &scn_);
         mjr_render(viewport, &scn_, &con_);
-        mjr_overlay(mjFONT_NORMAL, mjGRID_TOPLEFT, viewport,
-                    render_cams_[i].name.c_str(), nullptr, &con_);
+        mjr_overlay(mjFONT_NORMAL, mjGRID_TOPLEFT, viewport,render_cams_[i].name.c_str(), nullptr, &con_);
+        
+        if (shm_writer_ && render_cams_[i].name == stream_camera_) {
+            std::vector<uint8_t> pixels(cell_w * cell_h * 3);
+            mjrRect vp = {x, y, cell_w, cell_h};
+            mjr_readPixels(pixels.data(), nullptr, vp, &con_);
+
+            for (int row = 0; row < cell_h / 2; ++row) {
+                uint8_t* top = pixels.data() + row * cell_w * 3;
+                uint8_t* bot = pixels.data() + (cell_h - 1 - row) * cell_w * 3;
+                std::swap_ranges(top, top + cell_w * 3, bot);
+            }
+
+            shm_writer_->write(pixels.data(), pixels.size());
+        }
     }
 
     glfwSwapBuffers(window_);

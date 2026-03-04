@@ -1,0 +1,6 @@
+host: "127.0.0.1"
+port: 5004
+fps: 30
+bitrate_kbps: 2000
+fec_percentage: 10
+shm_name: "/avatar_cam"

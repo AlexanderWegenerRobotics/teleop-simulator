@@ -1,10 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
 cmake_policy(SET CMP0167 NEW)
 project(avatar VERSION 0.1.0)
+include(${CMAKE_SOURCE_DIR}/cmake/options.cmake)
 
-option(BUILD_WITH_FRANKA "Build with real Franka hardware support" OFF)
-option(BUILD_WITH_MUJOCO "Build with MuJoCo simulation"            ON)
-option(BUILD_STREAMER    "Build video streamer"                     OFF)
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Debug)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -97,6 +98,12 @@ if(BUILD_WITH_FRANKA)
 endif()
 
 if(BUILD_STREAMER)
+    pkg_check_modules(GST REQUIRED
+        gstreamer-1.0
+        gstreamer-app-1.0
+        gstreamer-video-1.0
+    )
+
     add_executable(avatar_streamer
         src/streamer/streamer_main.cpp
         src/streamer/video_streamer.cpp
@@ -111,6 +118,14 @@ if(BUILD_STREAMER)
     target_link_libraries(avatar_streamer PRIVATE
         yaml-cpp::yaml-cpp
         ${GST_LIBRARIES}
+    )
+
+    target_link_directories(avatar_streamer PRIVATE
+        ${GST_LIBRARY_DIRS}
+    )
+
+    target_compile_options(avatar_streamer PRIVATE
+        ${GST_CFLAGS_OTHER}
     )
 
     target_compile_definitions(avatar_streamer PRIVATE BUILD_STREAMER)

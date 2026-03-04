@@ -181,8 +181,7 @@ BuiltScene SceneBuilder::build(const YAML::Node& config) {
     if (config["simulation"] && config["simulation"]["model_path"])
         baseScenePath = config["simulation"]["model_path"].as<std::string>();
 
-    std::string xml = buildSceneXML(result.devices, result.objects,
-                                    result.cameras, baseScenePath);
+    std::string xml = buildSceneXML(result.devices, result.objects,result.cameras, baseScenePath);
 
     result.xml_path =
         std::filesystem::path(baseScenePath).parent_path() / "_generated_scene.xml";
@@ -262,6 +261,7 @@ std::vector<CameraConfig> SceneBuilder::parseCameras(const YAML::Node& config) {
     if (!config["cameras"]) return cameras;
 
     for (const auto& node : config["cameras"]) {
+        if(!node["enabled"].as<bool>()) continue; 
         CameraConfig cam;
         cam.name = node["name"].as<std::string>();
         cam.type = node["type"].as<std::string>();

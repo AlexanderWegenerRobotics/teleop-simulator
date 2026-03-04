@@ -1,6 +1,8 @@
 rendering:
-  enabled: True
-  fps: 20
+  enabled: False
+  fps: 30
+  streaming: true
+  stream_camera: "head_head_cam"
 
 simulation:
   timestep: 0.001
@@ -89,18 +91,21 @@ objects:
 
 cameras:
   - name: workspace_overview_1
+    enabled: False
     type: fixed
     pos: [1.5, 0, 0.8]
     look_at: [0.4, 0.0, 0.4]
     fovy: 90
 
   - name: workspace_overview_2
+    enabled: False
     type: fixed
     pos: [0.3, 0.3, 1.9]
     look_at: [0.0, 0.0, 0.4]
     fovy: 90
 
   - name: workspace_overview_3
+    enabled: False
     type: fixed
     pos: [0.5, 0.3, 0.9]
     look_at: [0.5, 0.0, 0.7]
