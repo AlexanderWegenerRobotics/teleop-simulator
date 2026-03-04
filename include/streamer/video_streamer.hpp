@@ -9,10 +9,12 @@
 #include <gst/app/gstappsrc.h>
 
 #include "streamer/camera_source.hpp"
+#include "streamer/stream_quality_controller.hpp"
 
 struct StreamerConfig {
     std::string host;
     int         port;
+    int         feedback_port;
     int         fps;
     int         bitrate_kbps;
     int         fec_percentage;
@@ -41,4 +43,7 @@ private:
     std::thread       loop_thread_;
     std::atomic<bool> bRunning_{false};
     uint64_t          frame_count_ = 0;
+
+    GstElement* encoder_ = nullptr;
+    std::unique_ptr<StreamQualityController> quality_;
 };

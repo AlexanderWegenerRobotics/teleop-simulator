@@ -108,6 +108,7 @@ if(BUILD_STREAMER)
         src/streamer/streamer_main.cpp
         src/streamer/video_streamer.cpp
         src/streamer/camera_source.cpp
+        src/streamer/stream_quality_controller.cpp
     )
 
     target_include_directories(avatar_streamer PRIVATE

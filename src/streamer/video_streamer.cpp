@@ -23,6 +23,19 @@ void VideoStreamer::start() {
     loop_ = g_main_loop_new(nullptr, FALSE);
     loop_thread_ = std::thread([this]() { g_main_loop_run(loop_); });
 
+    StreamQualityConfig qc_config{};
+    qc_config.listen_port    = config_.feedback_port;
+    qc_config.bitrate_normal = config_.bitrate_kbps;
+    qc_config.fps_normal     = config_.fps;
+    qc_config.fec_normal     = config_.fec_percentage;
+
+    quality_ = std::make_unique<StreamQualityController>(qc_config);
+    quality_->setOnQualityChange([this](const StreamQualityParams& params) {
+        if (encoder_)
+            g_object_set(G_OBJECT(encoder_), "bitrate", params.bitrate_kbps, nullptr);
+    });
+    quality_->start();
+
     GstBus* bus = gst_element_get_bus(pipeline_);
     gst_bus_add_watch(bus, [](GstBus*, GstMessage* msg, gpointer) -> gboolean {
         if (GST_MESSAGE_TYPE(msg) == GST_MESSAGE_ERROR) {
@@ -53,6 +66,7 @@ void VideoStreamer::start() {
 void VideoStreamer::stop() {
     bRunning_ = false;
     if (source_) source_->stop();
+    if (quality_) quality_->stop();
 
     if (pipeline_) {
         gst_element_set_state(pipeline_, GST_STATE_NULL);
@@ -79,7 +93,7 @@ void VideoStreamer::buildPipeline() {
         " ! queue max-size-buffers=2 leaky=downstream"
         " ! videoconvert"
         " ! video/x-raw,format=I420"
-        " ! x264enc tune=zerolatency speed-preset=ultrafast"
+        " ! x264enc name=encoder tune=zerolatency speed-preset=ultrafast"
         " bitrate="     + std::to_string(config_.bitrate_kbps) +
         " key-int-max=30"
         " ! rtph264pay pt=96"
@@ -100,6 +114,10 @@ void VideoStreamer::buildPipeline() {
     appsrc_ = gst_bin_get_by_name(GST_BIN(pipeline_), "src");
     if (!appsrc_)
         throw std::runtime_error("Failed to get appsrc element from pipeline");
+
+    encoder_ = gst_bin_get_by_name(GST_BIN(pipeline_), "encoder");
+    if (!encoder_)
+        throw std::runtime_error("Failed to get encoder element from pipeline");
 
     gst_app_src_set_stream_type(GST_APP_SRC(appsrc_), GST_APP_STREAM_TYPE_STREAM);
     gst_app_src_set_latency(GST_APP_SRC(appsrc_), 0, -1);
