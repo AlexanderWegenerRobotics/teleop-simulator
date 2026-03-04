@@ -156,18 +156,27 @@ void ArmControl::updateStateMachine(SysState cmd_state){
             }
             break;
         case SysState::AWAITING:
-            if(cmd_state == SysState::ENGAGED){
+            if(cmd_state == SysState::IDLE){
+                state_ = SysState::IDLE;
+            }
+            else if(cmd_state == SysState::ENGAGED){
                 state_ = SysState::ENGAGED;
                 std::cout << "[INFO]: " << name_ << " engaged." << std::endl;
             }
             break;
         case SysState::ENGAGED:
-            if(cmd_state == SysState::PAUSED){
+            if(cmd_state == SysState::IDLE){
+                state_ = SysState::IDLE;
+            }    
+            else if(cmd_state == SysState::PAUSED){
                 state_ = SysState::PAUSED;
             }
             break;
         case SysState::PAUSED:
-            if(cmd_state == SysState::ENGAGED){
+            if(cmd_state == SysState::IDLE){
+                state_ = SysState::IDLE;
+            }
+            else if(cmd_state == SysState::ENGAGED){
                 state_ = SysState::ENGAGED;
             }
             break;
@@ -288,7 +297,7 @@ bool ArmControl::isHome() {
         T_ee = Eigen::Isometry3d(Eigen::Map<const Eigen::Matrix4d>(current_state.O_T_EE.data()));
     }
 
-    bool position_reached = (q0_ - q).cwiseAbs().maxCoeff() < 0.05;
+    bool position_reached = (q0_ - q).cwiseAbs().maxCoeff() < 0.3;
     bool velocity_settled = dq.cwiseAbs().maxCoeff() < 0.01;
 
     if (position_reached && velocity_settled) {

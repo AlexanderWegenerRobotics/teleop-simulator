@@ -55,7 +55,7 @@ void Avatar::start(){
     for(const auto& arm : arm_instances){
         arm->start();
     }
-    std::cout << "[INFO]: All devices started" << std::endl;
+    std::cout << "[AVATAR-INFO]: All devices started" << std::endl;
 
     constexpr std::chrono::microseconds control_period(static_cast<int>(1e6 / 100));
 	auto next_control_time = std::chrono::high_resolution_clock::now();
@@ -105,6 +105,7 @@ void Avatar::updateStateMachine(SysState cmd_state){
             }
             if(allInState(SysState::AWAITING)){
                 state_ = SysState::AWAITING;
+                std::cout << "[AVATAR-INFO]: Awaiting engagement." << std::endl;
             }
             break;
         case SysState::AWAITING:
@@ -115,26 +116,31 @@ void Avatar::updateStateMachine(SysState cmd_state){
             else if(cmd_state == SysState::ENGAGED && allInState(SysState::AWAITING)){
                 requestAllDevices(SysState::ENGAGED);
                 state_ = SysState::ENGAGED;
+                std::cout << "[AVATAR-INFO]: Engage system." << std::endl;
             }
             break;
         case SysState::ENGAGED:
             if(cmd_state == SysState::IDLE){
                 requestAllDevices(SysState::IDLE);
                 state_ = SysState::IDLE;
+                std::cout << "[AVATAR-INFO]: Switch engage -> idle." << std::endl;
             }
             else if(cmd_state == SysState::PAUSED){
                 requestAllDevices(SysState::PAUSED);
                 state_ = SysState::PAUSED;
+                std::cout << "[AVATAR-INFO]: Switch engage -> pause." << std::endl;
             }
             break;
         case SysState::PAUSED:
             if(cmd_state == SysState::IDLE){
                 requestAllDevices(SysState::IDLE);
                 state_ = SysState::IDLE;
+                std::cout << "[AVATAR-INFO]: Switch pause -> idle." << std::endl;
             }
             else if(cmd_state == SysState::ENGAGED && allInState(SysState::PAUSED)){
                 requestAllDevices(SysState::ENGAGED);
                 state_ = SysState::ENGAGED;
+                std::cout << "[AVATAR-INFO]: Switch pause -> engage." << std::endl;
             }
             break;
 

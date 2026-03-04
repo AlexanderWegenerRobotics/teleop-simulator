@@ -50,7 +50,7 @@ private:
     HeadState current_state;
     double alpha_dq;
     const Vector2 kp_ = (Vector2() << 40.0, 40.0).finished();
-    const Vector2 kd_ = (Vector2() << 1.0, 1.0).finished();
+    const Vector2 kd_ = (Vector2() << 12.0, 12.0).finished();
 
 private:
     void runControlHandler();

@@ -39,6 +39,7 @@ HeadControl::~HeadControl(){
 
 void HeadControl::start(){
     bRunning = true;
+    state_ = SysState::IDLE;
     control_thread = std::thread(&HeadControl::runControlHandler, this);
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     state_thread = std::thread(&HeadControl::runStateHandler, this);
@@ -125,18 +126,27 @@ void HeadControl::updateStateMachine(SysState cmd_state){
             }
             break;
         case SysState::AWAITING:
-            if(cmd_state == SysState::ENGAGED){
+            if(cmd_state == SysState::IDLE){
+                state_ = SysState::IDLE;
+            }
+            else if(cmd_state == SysState::ENGAGED){
                 state_ = SysState::ENGAGED;
                 std::cout << "[INFO]: " << name_ << " engaged." << std::endl;
             }
             break;
         case SysState::ENGAGED:
-            if(cmd_state == SysState::PAUSED){
+            if(cmd_state == SysState::IDLE){
+                state_ = SysState::IDLE;
+            }
+            else if(cmd_state == SysState::PAUSED){
                 state_ = SysState::PAUSED;
             }
             break;
         case SysState::PAUSED:
-            if(cmd_state == SysState::ENGAGED){
+            if(cmd_state == SysState::IDLE){
+                state_ = SysState::IDLE;
+            }
+            else if(cmd_state == SysState::ENGAGED){
                 state_ = SysState::ENGAGED;
             }
             break;
@@ -150,6 +160,8 @@ void HeadControl::runControlHandler() {
     franka_joint_driver::Driver::CallbackFunctionTorque torque_control_callback =
         [&](const std::vector<Driver::State>& driver_state,
             std::vector<Driver::CommandTorque>& command) -> void {
+
+            interpolator_.step();
 
             Vector2 q, tau_j;
             for (size_t i = 0; i < 2; ++i) {
@@ -170,7 +182,8 @@ void HeadControl::runControlHandler() {
                 current_state.dq = dq;
             }
 
-            Vector2 q_cmd = Vector2::Zero();
+
+            Vector2 q_cmd = interpolator_.getCurrentJoint();
             Vector2 e = q_cmd - q;
             Vector2 tau_cmd = kp_.cwiseProduct(e) - kd_.cwiseProduct(dq);
 
