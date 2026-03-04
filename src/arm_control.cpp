@@ -42,6 +42,7 @@ ArmControl::ArmControl(const YAML::Node& device_config)
         };
         transmission_ = std::make_unique<Transmission>(tx_config);
     }
+    logger_ = std::make_unique<DataLogger<ArmLogEntry>>("../log/" + name_ + "_log.csv", armLogHeader, armLogRow);
 }
 
 ArmControl::~ArmControl(){
@@ -58,9 +59,13 @@ void ArmControl::start(){
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     state_thread = std::thread(&ArmControl::runStateHandler, this);
     if (transmission_) transmission_->start();
+    logger_->start();
+    logger_->enable(true);
+    startTime_ = std::chrono::high_resolution_clock::now();
 }
 
 void ArmControl::stop(){
+    if (logger_) logger_->stop();
     bRunning = false;
     state_ = SysState::OFFLINE;
     if (control_thread.joinable()) control_thread.join();
@@ -208,6 +213,21 @@ void ArmControl::runControlHandler(){
 
                 default:
                     ctrl_torque = jointImpedanceControl(robot_state);
+            }
+
+            if (logger_) {
+                double t = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - startTime_).count();
+
+                ArmLogEntry entry{};
+                entry.time  = t;
+                entry.state = state_;
+                std::copy(robot_state.q.begin(),                    robot_state.q.end(),                    entry.q.begin());
+                std::copy(robot_state.dq.begin(),                   robot_state.dq.end(),                   entry.dq.begin());
+                std::copy(robot_state.tau_J.begin(),                robot_state.tau_J.end(),                entry.tau_J.begin());
+                std::copy(robot_state.tau_ext_hat_filtered.begin(), robot_state.tau_ext_hat_filtered.end(), entry.tau_ext.begin());
+                std::copy(robot_state.O_T_EE.begin(),               robot_state.O_T_EE.end(),               entry.O_T_EE.begin());
+                std::copy(robot_state.O_F_ext_hat_K.begin(),        robot_state.O_F_ext_hat_K.end(),        entry.F_ext.begin());
+                logger_->write(entry);
             }
             
             std::array<double, 7> ctrl_array;

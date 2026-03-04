@@ -1,4 +1,5 @@
 #include "head_control.hpp"
+#include "data_logger.hpp"
 #include <iostream>
 
 using namespace franka_joint_driver;
@@ -31,6 +32,7 @@ HeadControl::HeadControl(const YAML::Node& device_config)
         };
         transmission_ = std::make_unique<Transmission>(tx_config);
     }
+    logger_ = std::make_unique<DataLogger<HeadLogEntry>>("../log/" + name_ + "_log.csv", headLogHeader, headLogRow);
 }
 
 HeadControl::~HeadControl(){
@@ -44,6 +46,9 @@ void HeadControl::start(){
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     state_thread = std::thread(&HeadControl::runStateHandler, this);
     if (transmission_) transmission_->start();
+    logger_->start();
+    logger_->enable(true);
+    startTime_ = std::chrono::high_resolution_clock::now();
 }
 
 void HeadControl::stop(){
@@ -186,6 +191,21 @@ void HeadControl::runControlHandler() {
             Vector2 q_cmd = interpolator_.getCurrentJoint();
             Vector2 e = q_cmd - q;
             Vector2 tau_cmd = kp_.cwiseProduct(e) - kd_.cwiseProduct(dq);
+
+            if (logger_) {
+                double t = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - startTime_).count();
+
+                HeadLogEntry entry{};
+                entry.time     = t;
+                entry.state    = state_;
+                entry.q[0]     = q(0);
+                entry.q[1]     = q(1);
+                entry.dq[0]    = dq(0);
+                entry.dq[1]    = dq(1);
+                entry.tau_J[0] = tau_cmd(0);
+                entry.tau_J[1] = tau_cmd(1);
+                logger_->write(entry);
+            }
 
             for (size_t i = 0; i < 2; ++i) {
                 command[i].tau_j_d  = tau_cmd[i];

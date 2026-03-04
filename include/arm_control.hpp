@@ -11,6 +11,7 @@
 #include "sim_env/gripper.hpp"
 #include "interpolator.hpp"
 #include "transmission.hpp"
+#include "data_logger.hpp"
 #include "common.hpp"
 
 class Simulation;
@@ -41,6 +42,8 @@ private:
     std::atomic<SysState> cmd_state_{SysState::OFFLINE};
     Interpolator interpolator_;
     std::unique_ptr<Transmission> transmission_;
+    std::unique_ptr<DataLogger<ArmLogEntry>> logger_;
+    std::chrono::high_resolution_clock::time_point startTime_;
     
 private:
     void runControlHandler();

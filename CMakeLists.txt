@@ -17,6 +17,7 @@ add_definitions(-DCOAL_DISABLE_HPP_FCL_WARNINGS)
 find_package(yaml-cpp REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Poco REQUIRED COMPONENTS Net Foundation)
+find_package(HDF5 REQUIRED COMPONENTS CXX)
 
 if(BUILD_WITH_MUJOCO)
     find_package(tinyxml2 REQUIRED)
@@ -71,6 +72,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${MUJOCO_ROOT}
     ${GLFW_INCLUDE_DIRS}
     ${Poco_INCLUDE_DIRS}
+    ${HDF5_INCLUDE_DIRS}
 )
 
 # ── Link & definitions ────────────────────────────────────────────────────────
@@ -82,6 +84,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     glfw
     Poco::Net
     Poco::Foundation
+    ${HDF5_CXX_LIBRARIES}
 )
 
 if(BUILD_WITH_MUJOCO)

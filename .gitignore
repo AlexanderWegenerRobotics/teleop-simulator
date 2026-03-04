@@ -9,6 +9,8 @@ Makefile
 .cache/
 **/.cache/
 
+log/
+
 # Compiled objects
 *.o
 *.a
