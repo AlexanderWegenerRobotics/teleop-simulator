@@ -114,6 +114,10 @@ void VideoStreamer::pushFrame(const uint8_t* rgb, uint32_t width, uint32_t heigh
     GstBuffer* buffer = gst_buffer_new_allocate(nullptr, size, nullptr);
     if (!buffer) return;
 
+    GST_BUFFER_PTS(buffer) = frame_count_ * GST_SECOND / config_.fps;
+    GST_BUFFER_DURATION(buffer) = GST_SECOND / config_.fps;
+    frame_count_++;
+
     GstMapInfo map;
     if (!gst_buffer_map(buffer, &map, GST_MAP_WRITE)) {
         gst_buffer_unref(buffer);
