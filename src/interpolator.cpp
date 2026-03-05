@@ -35,8 +35,14 @@ double Interpolator::trapezoidalProfile(double t, double duration) const {
     return std::clamp(pos, 0.0, 1.0);
 }
 
-double Interpolator::computeCartesianDuration(const Eigen::Isometry3d& T_start,
-                                               const Eigen::Isometry3d& T_end) const {
+double Interpolator::linearProfile(double t, double duration) const{
+    if (t <= 0.0)           return 0.0;
+    if (t >= duration)      return 1.0;
+    double pos = 0.0;
+    return std::clamp(pos, 0.0, 1.0);
+}
+
+double Interpolator::computeCartesianDuration(const Eigen::Isometry3d& T_start, const Eigen::Isometry3d& T_end) const {
     double linear_dist  = (T_end.translation() - T_start.translation()).norm();
     Eigen::AngleAxisd aa(T_start.rotation().transpose() * T_end.rotation());
     double angular_dist = std::abs(aa.angle());
@@ -48,15 +54,13 @@ double Interpolator::computeCartesianDuration(const Eigen::Isometry3d& T_start,
     return std::max({t_linear, t_angular, min_duration});
 }
 
-double Interpolator::computeJointDuration(const Eigen::VectorXd& q_start,
-                                           const Eigen::VectorXd& q_end) const {
+double Interpolator::computeJointDuration(const Eigen::VectorXd& q_start, const Eigen::VectorXd& q_end) const {
     double max_displacement = (q_end - q_start).cwiseAbs().maxCoeff();
     double min_duration     = static_cast<double>(n_waypoints_) / config_.control_freq;
     return std::max(max_displacement / config_.max_angular_vel, min_duration);
 }
 
-void Interpolator::planJoint(const Eigen::VectorXd& q_start,
-                              const Eigen::VectorXd& q_end) {
+void Interpolator::planJoint(const Eigen::VectorXd& q_start, const Eigen::VectorXd& q_end) {
     if (q_start.size() != config_.n_dof || q_end.size() != config_.n_dof)
         throw std::invalid_argument("Joint vector size mismatch");
 

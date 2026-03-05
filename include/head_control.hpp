@@ -52,7 +52,7 @@ private:
     Vector2 q0_;
     HeadState current_state;
     double alpha_dq;
-    const Vector2 kp_ = (Vector2() << 40.0, 40.0).finished();
+    const Vector2 kp_ = (Vector2() << 50.0, 50.0).finished();
     const Vector2 kd_ = (Vector2() << 5.0, 5.0).finished();
 
 private:

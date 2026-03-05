@@ -22,11 +22,9 @@ class Interpolator {
 public:
     explicit Interpolator(const InterpolatorConfig& config);
 
-    void planJoint(const Eigen::VectorXd& q_start,
-                   const Eigen::VectorXd& q_end);
+    void planJoint(const Eigen::VectorXd& q_start, const Eigen::VectorXd& q_end);
 
-    void planCartesian(const Eigen::Isometry3d& T_start,
-                       const Eigen::Isometry3d& T_end);
+    void planCartesian(const Eigen::Isometry3d& T_start, const Eigen::Isometry3d& T_end);
 
     Eigen::VectorXd     getCurrentJoint()     const;
     Eigen::Isometry3d   getCurrentCartesian() const;
@@ -36,13 +34,10 @@ public:
     void reset();
 
 private:
-    double computeCartesianDuration(const Eigen::Isometry3d& T_start,
-                                     const Eigen::Isometry3d& T_end) const;
-
-    double computeJointDuration(const Eigen::VectorXd& q_start,
-                                 const Eigen::VectorXd& q_end) const;
-
+    double computeCartesianDuration(const Eigen::Isometry3d& T_start, const Eigen::Isometry3d& T_end) const;
+    double computeJointDuration(const Eigen::VectorXd& q_start, const Eigen::VectorXd& q_end) const;
     double trapezoidalProfile(double t, double duration) const;
+    double linearProfile(double t, double duration) const;
 
 private:
     InterpolatorConfig config_;

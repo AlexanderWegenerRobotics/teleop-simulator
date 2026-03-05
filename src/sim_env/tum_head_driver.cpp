@@ -34,6 +34,7 @@ Driver::Error Driver::control(const Driver::CallbackFunctionTorque& driver_callb
         
         for (size_t i = 0; i < 2; ++i) {
             state[i].theta = device_state.q[i];
+            state[i].tau_j = device_state.tau_J[i];
         }
         
         driver_callback_torque(state, command);

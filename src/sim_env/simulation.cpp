@@ -83,6 +83,7 @@ void Simulation::start() {
     }
 
     model_thread = std::thread(&Simulation::run_model, this);
+    std::cout << "[INFO]: Simulation started." << std::endl;
 }
 
 void Simulation::stop() {
@@ -92,6 +93,7 @@ void Simulation::stop() {
     if (model_thread.joinable())     model_thread.join();
     if (rendering_thread.joinable()) rendering_thread.join();
     if (stream_thread_.joinable())   stream_thread_.join();
+    std::cout << "[INFO]: Simulation stopped." << std::endl;
 }
 
 bool Simulation::isRunning() const {

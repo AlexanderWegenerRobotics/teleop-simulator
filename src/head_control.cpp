@@ -8,13 +8,13 @@ HeadControl::HeadControl(const YAML::Node& device_config)
     : bRunning(false)
     , module(std::make_unique<franka_joint_driver::Driver>())
     , state_(SysState::OFFLINE)
-    , alpha_dq(0.2)
+    , alpha_dq(0.02)
     , interpolator_(InterpolatorConfig{
         .control_freq   = 1000,
-        .comm_freq      = 200,
+        .comm_freq      = device_config["transmission"]["frequency"].as<int>(),
         .n_dof          = 2,
         .max_linear_vel = 0.1,
-        .max_angular_vel = 0.5
+        .max_angular_vel = 0.05
     })
 {
     name_ = device_config["name"].as<std::string>();
@@ -85,13 +85,14 @@ void HeadControl::runStateHandler(){
             interpolator_.planJoint(q_current, q0_);
         }
         else if (state_ == SysState::ENGAGED) {
-            Vector2 q_target = q0_;
             if (has_cmd) {
+                Vector2 q_target;
                 q_target(0) = static_cast<double>(cmd.pan);
                 q_target(1) = static_cast<double>(cmd.tilt);
+                q_target += q0_;
+                interpolator_.planJoint(interpolator_.getCurrentJoint(), q_target);
                 has_cmd = false;
             }
-            interpolator_.planJoint(interpolator_.getCurrentJoint(), q_target);
         }
 
         if (transmission_) {
@@ -200,9 +201,9 @@ void HeadControl::runControlHandler() {
                 entry.time  = t;
                 entry.state = state_;
 
-                Eigen::Map<Eigen::Vector2d>(entry.q.data())     = q;
-                Eigen::Map<Eigen::Vector2d>(entry.q_cmd.data())     = q_cmd;
-                Eigen::Map<Eigen::Vector2d>(entry.dq.data())    = dq;
+                Eigen::Map<Eigen::Vector2d>(entry.q.data()) = q;
+                Eigen::Map<Eigen::Vector2d>(entry.q_cmd.data()) = q_cmd;
+                Eigen::Map<Eigen::Vector2d>(entry.dq.data()) = dq;
                 Eigen::Map<Eigen::Vector2d>(entry.tau_J.data()) = tau_cmd;
 
                 logger_->write(entry);

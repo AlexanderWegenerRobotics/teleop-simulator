@@ -14,10 +14,12 @@
 struct ArmLogEntry {
     double                 time;
     std::array<double, 7>  q;
+    std::array<double, 7>  q_cmd;
     std::array<double, 7>  dq;
     std::array<double, 7>  tau_J;
     std::array<double, 7>  tau_ext;
     std::array<double, 16> O_T_EE;
+    std::array<double, 16> O_T_EE_cmd;
     std::array<double, 6>  F_ext;
     SysState               state;
 };

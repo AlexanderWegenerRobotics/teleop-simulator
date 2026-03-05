@@ -233,7 +233,7 @@ def main():
         print("[4] Running circle trajectory for 20 seconds...")
         print("    (Ctrl+C to stop early)\n")
 
-        freq    = 50   # Hz
+        freq    = 200   # Hz
         dt      = 1.0 / freq
         t_start = time.time()
         t_end   = t_start + 20.0

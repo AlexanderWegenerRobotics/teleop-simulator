@@ -217,6 +217,15 @@ void ArmControl::runControlHandler(){
 
             if (logger_) {
                 double t = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - startTime_).count();
+                Vector7 q_target = Vector7::Zero();
+                Matrix4 T_target = Matrix4::Identity();
+                if(state_ == SysState::HOMING){
+                    q_target = interpolator_.getCurrentJoint();
+                }
+                else if(state_ == SysState::ENGAGED){
+                    Eigen::Isometry3d T_ee_target = interpolator_.getCurrentCartesian();
+                    T_target.block<1,3>(0,3) << T_ee_target.linear();
+                }
 
                 ArmLogEntry entry{};
                 entry.time  = t;

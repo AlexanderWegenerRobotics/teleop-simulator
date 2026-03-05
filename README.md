@@ -7,3 +7,7 @@ Sync mac
 
 sudo mkdir -p /var/run/chrony
 sudo /opt/homebrew/sbin/chronyd -f /opt/homebrew/etc/chrony.conf
+
+sudo mkdir -p /var/run/chrony
+sudo /opt/homebrew/sbin/chronyd -f /opt/homebrew/etc/chrony.conf
+alex@Alexs-MacBook-Pro ~ % chronyc tracking
