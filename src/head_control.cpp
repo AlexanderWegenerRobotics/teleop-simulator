@@ -8,7 +8,7 @@ HeadControl::HeadControl(const YAML::Node& device_config)
     : bRunning(false)
     , module(std::make_unique<franka_joint_driver::Driver>())
     , state_(SysState::OFFLINE)
-    , alpha_dq(0.5)
+    , alpha_dq(0.2)
     , interpolator_(InterpolatorConfig{
         .control_freq   = 1000,
         .comm_freq      = 200,
@@ -197,14 +197,14 @@ void HeadControl::runControlHandler() {
                 double t = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - startTime_).count();
 
                 HeadLogEntry entry{};
-                entry.time     = t;
-                entry.state    = state_;
-                entry.q[0]     = q(0);
-                entry.q[1]     = q(1);
-                entry.dq[0]    = dq(0);
-                entry.dq[1]    = dq(1);
-                entry.tau_J[0] = tau_cmd(0);
-                entry.tau_J[1] = tau_cmd(1);
+                entry.time  = t;
+                entry.state = state_;
+
+                Eigen::Map<Eigen::Vector2d>(entry.q.data())     = q;
+                Eigen::Map<Eigen::Vector2d>(entry.q_cmd.data())     = q_cmd;
+                Eigen::Map<Eigen::Vector2d>(entry.dq.data())    = dq;
+                Eigen::Map<Eigen::Vector2d>(entry.tau_J.data()) = tau_cmd;
+
                 logger_->write(entry);
             }
 

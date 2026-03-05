@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <fstream>
@@ -24,6 +25,7 @@ struct ArmLogEntry {
 struct HeadLogEntry {
     double                time;
     std::array<double, 2> q;
+    std::array<double, 2> q_cmd;
     std::array<double, 2> dq;
     std::array<double, 2> tau_J;
     SysState              state;
@@ -146,6 +148,7 @@ inline std::string armLogRow(const ArmLogEntry& e) {
 inline std::string headLogHeader() {
     std::string h = "time;";
     for (int i = 0; i < 2; ++i) h += "q_"     + std::to_string(i) + ";";
+    for (int i = 0; i < 2; ++i) h += "q_cmd_"     + std::to_string(i) + ";";
     for (int i = 0; i < 2; ++i) h += "dq_"    + std::to_string(i) + ";";
     for (int i = 0; i < 2; ++i) h += "tau_J_" + std::to_string(i) + ";";
     h += "state\n";
@@ -155,6 +158,7 @@ inline std::string headLogHeader() {
 inline std::string headLogRow(const HeadLogEntry& e) {
     std::string r = std::to_string(e.time) + ";";
     for (auto v : e.q)     r += std::to_string(v) + ";";
+    for (auto v : e.q_cmd)     r += std::to_string(v) + ";";
     for (auto v : e.dq)    r += std::to_string(v) + ";";
     for (auto v : e.tau_J) r += std::to_string(v) + ";";
     r += std::to_string(static_cast<uint8_t>(e.state)) + "\n";
