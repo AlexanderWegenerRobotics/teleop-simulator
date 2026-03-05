@@ -29,13 +29,14 @@ int main(int argc, char** argv) {
     }
 
     StreamerConfig config{
-        .host           = cfg["host"].as<std::string>(),
-        .port           = cfg["port"].as<int>(),
-        .feedback_port  = cfg["feedback_port"].as<int>(5005),
-        .fps            = cfg["fps"].as<int>(),
-        .bitrate_kbps   = cfg["bitrate_kbps"].as<int>(),
-        .fec_percentage = cfg["fec_percentage"].as<int>(),
-        .shm_name       = cfg["shm_name"].as<std::string>()
+        .host            = cfg["host"].as<std::string>(),
+        .port            = cfg["port"].as<int>(),
+        .feedback_port   = cfg["feedback_port"].as<int>(5005),
+        .timestamp_port  = cfg["timestamp_port"].as<int>(5006),
+        .fps             = cfg["fps"].as<int>(),
+        .bitrate_kbps    = cfg["bitrate_kbps"].as<int>(),
+        .fec_percentage  = cfg["fec_percentage"].as<int>(),
+        .shm_name        = cfg["shm_name"].as<std::string>()
     };
 
     std::signal(SIGINT,  onSignal);

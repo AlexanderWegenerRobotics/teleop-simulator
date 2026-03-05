@@ -4,6 +4,8 @@
 #include <iostream>
 #include <cstring>
 
+#include <unistd.h>
+
 #include <gst/app/gstappsrc.h>
 
 VideoStreamer::VideoStreamer(const StreamerConfig& config)
@@ -12,6 +14,13 @@ VideoStreamer::VideoStreamer(const StreamerConfig& config)
     gst_init(nullptr, nullptr);
     source_ = std::make_unique<MuJoCoSource>(config.shm_name, config.fps);
     target_fps_.store(config.fps);
+
+    ts_fd_ = socket(AF_INET, SOCK_DGRAM, 0);
+    if (ts_fd_ >= 0) {
+        ts_addr_.sin_family = AF_INET;
+        ts_addr_.sin_port   = htons(config.timestamp_port);
+        inet_pton(AF_INET, config.host.c_str(), &ts_addr_.sin_addr);
+    }
 }
 
 VideoStreamer::~VideoStreamer() {
@@ -71,6 +80,7 @@ void VideoStreamer::stop() {
     bRunning_ = false;
     if (source_) source_->stop();
     if (quality_) quality_->stop();
+    if (ts_fd_ >= 0) { close(ts_fd_); ts_fd_ = -1; }
 
     if (pipeline_) {
         gst_element_set_state(pipeline_, GST_STATE_NULL);
@@ -144,6 +154,16 @@ void VideoStreamer::pushFrame(const uint8_t* rgb, uint32_t width, uint32_t heigh
             frame_count_++;
             return;
         }
+    }
+
+    if (ts_fd_ >= 0) {
+        FrameTimestamp ts{};
+        ts.frame_number = frame_count_;
+        ts.sender_timestamp_ns = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        sendto(ts_fd_, reinterpret_cast<const char*>(&ts), sizeof(ts), 0,
+               reinterpret_cast<sockaddr*>(&ts_addr_), sizeof(ts_addr_));
     }
 
     size_t size = width * height * 3;

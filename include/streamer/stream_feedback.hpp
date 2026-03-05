@@ -11,3 +11,8 @@ struct StreamFeedbackMsg {
     uint32_t packets_lost;
     uint32_t frames_received;
 };
+
+struct FrameTimestamp {
+    uint64_t frame_number;
+    uint64_t sender_timestamp_ns;
+};

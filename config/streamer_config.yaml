@@ -1,6 +1,7 @@
-host: "127.0.0.1"
+host: "10.112.24.173"
 port: 5004
 feedback_port: 5005
+timestamp_port: 5006
 fps: 30
 bitrate_kbps: 2000
 fec_percentage: 10

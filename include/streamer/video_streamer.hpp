@@ -4,6 +4,9 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include <gst/gst.h>
 #include <gst/app/gstappsrc.h>
@@ -15,6 +18,7 @@ struct StreamerConfig {
     std::string host;
     int         port;
     int         feedback_port;
+    int         timestamp_port;
     int         fps;
     int         bitrate_kbps;
     int         fec_percentage;
@@ -48,4 +52,6 @@ private:
     GstElement* fec_     = nullptr;
     std::unique_ptr<StreamQualityController> quality_;
     std::atomic<int> target_fps_{0};
+    int ts_fd_ = -1;
+    struct sockaddr_in ts_addr_{};
 };
