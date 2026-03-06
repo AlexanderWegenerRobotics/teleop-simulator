@@ -126,10 +126,12 @@ private:
 inline std::string armLogHeader() {
     std::string h = "time;";
     for (int i = 0; i < 7;  ++i) h += "q_"       + std::to_string(i) + ";";
+    for (int i = 0; i < 7;  ++i) h += "q_cmd_"       + std::to_string(i) + ";";
     for (int i = 0; i < 7;  ++i) h += "dq_"      + std::to_string(i) + ";";
     for (int i = 0; i < 7;  ++i) h += "tau_J_"   + std::to_string(i) + ";";
     for (int i = 0; i < 7;  ++i) h += "tau_ext_" + std::to_string(i) + ";";
     for (int i = 0; i < 16; ++i) h += "O_T_EE_"  + std::to_string(i) + ";";
+    for (int i = 0; i < 16; ++i) h += "O_T_EE_cmd_"  + std::to_string(i) + ";";
     for (int i = 0; i < 6;  ++i) h += "F_ext_"   + std::to_string(i) + ";";
     h += "state\n";
     return h;
@@ -138,10 +140,12 @@ inline std::string armLogHeader() {
 inline std::string armLogRow(const ArmLogEntry& e) {
     std::string r = std::to_string(e.time) + ";";
     for (auto v : e.q)      r += std::to_string(v) + ";";
+    for (auto v : e.q_cmd)      r += std::to_string(v) + ";";
     for (auto v : e.dq)     r += std::to_string(v) + ";";
     for (auto v : e.tau_J)  r += std::to_string(v) + ";";
     for (auto v : e.tau_ext)r += std::to_string(v) + ";";
     for (auto v : e.O_T_EE) r += std::to_string(v) + ";";
+    for (auto v : e.O_T_EE_cmd) r += std::to_string(v) + ";";
     for (auto v : e.F_ext)  r += std::to_string(v) + ";";
     r += std::to_string(static_cast<uint8_t>(e.state)) + "\n";
     return r;

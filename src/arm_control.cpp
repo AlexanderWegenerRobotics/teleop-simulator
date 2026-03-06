@@ -224,17 +224,19 @@ void ArmControl::runControlHandler(){
                 }
                 else if(state_ == SysState::ENGAGED){
                     Eigen::Isometry3d T_ee_target = interpolator_.getCurrentCartesian();
-                    T_target.block<1,3>(0,3) << T_ee_target.linear();
+                    T_target = T_ee_target.matrix();
                 }
 
                 ArmLogEntry entry{};
                 entry.time  = t;
                 entry.state = state_;
                 std::copy(robot_state.q.begin(),                    robot_state.q.end(),                    entry.q.begin());
+                Eigen::Map<Vector7>(entry.q_cmd.data()) = q_target;
                 std::copy(robot_state.dq.begin(),                   robot_state.dq.end(),                   entry.dq.begin());
                 std::copy(robot_state.tau_J.begin(),                robot_state.tau_J.end(),                entry.tau_J.begin());
                 std::copy(robot_state.tau_ext_hat_filtered.begin(), robot_state.tau_ext_hat_filtered.end(), entry.tau_ext.begin());
                 std::copy(robot_state.O_T_EE.begin(),               robot_state.O_T_EE.end(),               entry.O_T_EE.begin());
+                Eigen::Map<Matrix4>(entry.O_T_EE_cmd.data()) = T_target;
                 std::copy(robot_state.O_F_ext_hat_K.begin(),        robot_state.O_F_ext_hat_K.end(),        entry.F_ext.begin());
                 logger_->write(entry);
             }
