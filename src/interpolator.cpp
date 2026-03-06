@@ -5,113 +5,130 @@
 
 Interpolator::Interpolator(const InterpolatorConfig& config)
     : config_(config)
-    , n_waypoints_(config.control_freq / config.comm_freq)
+    , min_steps_(config.control_freq / config.comm_freq)
+    , n_steps_(min_steps_)
     , current_idx_(0)
     , space_(InterpolationSpace::JOINT)
-{
-    joint_waypoints_.resize(n_waypoints_, Eigen::VectorXd::Zero(config.n_dof));
-    cartesian_waypoints_.resize(n_waypoints_, Eigen::Isometry3d::Identity());
+{}
+
+int Interpolator::computeJointSteps(const Eigen::VectorXd& q_start, const Eigen::VectorXd& q_end) const {
+    double max_displacement = (q_end - q_start).cwiseAbs().maxCoeff();
+    double t_min            = max_displacement / config_.max_angular_vel;
+    int    steps            = static_cast<int>(std::ceil(t_min * config_.control_freq));
+    return std::max(steps, min_steps_);
 }
 
-double Interpolator::trapezoidalProfile(double t, double duration) const {
-    constexpr double ramp_fraction = 0.2;
-    double t_ramp = duration * ramp_fraction;
-
-    if (t <= 0.0)           return 0.0;
-    if (t >= duration)      return 1.0;
-
-    double pos = 0.0;
-    double v_max = 1.0 / (duration * (1.0 - ramp_fraction));
-
-    if (t < t_ramp) {
-        pos = 0.5 * (v_max / t_ramp) * t * t;
-    } else if (t < duration - t_ramp) {
-        pos = 0.5 * v_max * t_ramp + v_max * (t - t_ramp);
-    } else {
-        double dt = t - (duration - t_ramp);
-        pos = 1.0 - 0.5 * (v_max / t_ramp) * (t_ramp - dt) * (t_ramp - dt);
-    }
-
-    return std::clamp(pos, 0.0, 1.0);
-}
-
-double Interpolator::linearProfile(double t, double duration) const{
-    if (t <= 0.0)           return 0.0;
-    if (t >= duration)      return 1.0;
-    double pos = 0.0;
-    return std::clamp(pos, 0.0, 1.0);
-}
-
-double Interpolator::computeCartesianDuration(const Eigen::Isometry3d& T_start, const Eigen::Isometry3d& T_end) const {
+int Interpolator::computeCartesianSteps(const Eigen::Isometry3d& T_start, const Eigen::Isometry3d& T_end) const {
     double linear_dist  = (T_end.translation() - T_start.translation()).norm();
     Eigen::AngleAxisd aa(T_start.rotation().transpose() * T_end.rotation());
     double angular_dist = std::abs(aa.angle());
 
     double t_linear  = linear_dist  / config_.max_linear_vel;
     double t_angular = angular_dist / config_.max_angular_vel;
-
-    double min_duration = static_cast<double>(n_waypoints_) / config_.control_freq;
-    return std::max({t_linear, t_angular, min_duration});
+    int    steps     = static_cast<int>(std::ceil(std::max(t_linear, t_angular) * config_.control_freq));
+    return std::max(steps, min_steps_);
 }
 
-double Interpolator::computeJointDuration(const Eigen::VectorXd& q_start, const Eigen::VectorXd& q_end) const {
-    double max_displacement = (q_end - q_start).cwiseAbs().maxCoeff();
-    double min_duration     = static_cast<double>(n_waypoints_) / config_.control_freq;
-    return std::max(max_displacement / config_.max_angular_vel, min_duration);
+double Interpolator::trapezoidalProfile(double t) const {
+    constexpr double ramp_fraction = 0.2;
+    if (t <= 0.0) return 0.0;
+    if (t >= 1.0) return 1.0;
+    double t_ramp = ramp_fraction;
+    double v_max  = 1.0 / (1.0 - ramp_fraction);
+    double pos    = 0.0;
+    if (t < t_ramp) {
+        pos = 0.5 * (v_max / t_ramp) * t * t;
+    } else if (t < 1.0 - t_ramp) {
+        pos = 0.5 * v_max * t_ramp + v_max * (t - t_ramp);
+    } else {
+        double dt = t - (1.0 - t_ramp);
+        pos = 1.0 - 0.5 * (v_max / t_ramp) * (t_ramp - dt) * (t_ramp - dt);
+    }
+    return std::clamp(pos, 0.0, 1.0);
 }
 
-void Interpolator::planJoint(const Eigen::VectorXd& q_start, const Eigen::VectorXd& q_end) {
+double Interpolator::linearProfile(double t) const {
+    if (t <= 0.0) return 0.0;
+    if (t >= 1.0) return 1.0;
+    return t;
+}
+
+double Interpolator::minJerkProfile(double t) const {
+    if (t <= 0.0) return 0.0;
+    if (t >= 1.0) return 1.0;
+    return 10.0*t*t*t - 15.0*t*t*t*t + 6.0*t*t*t*t*t;
+}
+
+double Interpolator::applyProfile(double t, ProfileType profile) const {
+    switch (profile) {
+        case ProfileType::LINEAR:      return linearProfile(t);
+        case ProfileType::MINJERK:     return minJerkProfile(t);
+        case ProfileType::TRAPEZOIDAL:
+        default:                       return trapezoidalProfile(t);
+    }
+}
+
+void Interpolator::planJoint(const Eigen::VectorXd& q_start, const Eigen::VectorXd& q_end,
+                              ProfileType profile) {
     if (q_start.size() != config_.n_dof || q_end.size() != config_.n_dof)
         throw std::invalid_argument("Joint vector size mismatch");
 
-    space_ = InterpolationSpace::JOINT;
+    int n_steps = computeJointSteps(q_start, q_end);
+    std::vector<Eigen::VectorXd> waypoints(n_steps);
 
-    double duration = computeJointDuration(q_start, q_end);
-    double dt       = duration / n_waypoints_;
-
-    for (int i = 0; i < n_waypoints_; ++i) {
-        double t   = i * dt;
-        double s   = trapezoidalProfile(t, duration);
-        joint_waypoints_[i] = q_start + s * (q_end - q_start);
+    for (int i = 0; i < n_steps; ++i) {
+        double t = (n_steps > 1) ? static_cast<double>(i) / (n_steps - 1) : 1.0;
+        double s = applyProfile(t, profile);
+        waypoints[i] = q_start + s * (q_end - q_start);
     }
 
-    current_idx_ = 0;
+    std::lock_guard<std::mutex> lock(mtx_);
+    space_           = InterpolationSpace::JOINT;
+    n_steps_         = n_steps;
+    joint_waypoints_ = std::move(waypoints);
+    current_idx_     = 0;
 }
 
-void Interpolator::planCartesian(const Eigen::Isometry3d& T_start,
-                                  const Eigen::Isometry3d& T_end) {
-    space_ = InterpolationSpace::CARTESIAN;
-
-    double duration = computeCartesianDuration(T_start, T_end);
-    double dt       = duration / n_waypoints_;
+void Interpolator::planCartesian(const Eigen::Isometry3d& T_start, const Eigen::Isometry3d& T_end,
+                                  ProfileType profile) {
+    int n_steps = computeCartesianSteps(T_start, T_end);
+    std::vector<Eigen::Isometry3d> waypoints(n_steps);
 
     Eigen::Quaterniond q_start(T_start.rotation());
     Eigen::Quaterniond q_end(T_end.rotation());
 
-    for (int i = 0; i < n_waypoints_; ++i) {
-        double t = i * dt;
-        double s = trapezoidalProfile(t, duration);
+    for (int i = 0; i < n_steps; ++i) {
+        double t = (n_steps > 1) ? static_cast<double>(i) / (n_steps - 1) : 1.0;
+        double s = applyProfile(t, profile);
 
         Eigen::Isometry3d T = Eigen::Isometry3d::Identity();
         T.translation() = T_start.translation() + s * (T_end.translation() - T_start.translation());
         T.linear()      = q_start.slerp(s, q_end).toRotationMatrix();
-
-        cartesian_waypoints_[i] = T;
+        waypoints[i]    = T;
     }
 
-    current_idx_ = 0;
+    std::lock_guard<std::mutex> lock(mtx_);
+    space_               = InterpolationSpace::CARTESIAN;
+    n_steps_             = n_steps;
+    cartesian_waypoints_ = std::move(waypoints);
+    current_idx_         = 0;
 }
 
 Eigen::VectorXd Interpolator::getCurrentJoint() const {
-    return joint_waypoints_[std::min(current_idx_, n_waypoints_ - 1)];
+    std::lock_guard<std::mutex> lock(mtx_);
+    if (joint_waypoints_.empty()) return Eigen::VectorXd::Zero(config_.n_dof);
+    return joint_waypoints_[std::min(current_idx_, n_steps_ - 1)];
 }
 
 Eigen::Isometry3d Interpolator::getCurrentCartesian() const {
-    return cartesian_waypoints_[std::min(current_idx_, n_waypoints_ - 1)];
+    std::lock_guard<std::mutex> lock(mtx_);
+    if (cartesian_waypoints_.empty()) return Eigen::Isometry3d::Identity();
+    return cartesian_waypoints_[std::min(current_idx_, n_steps_ - 1)];
 }
 
 bool Interpolator::step() {
-    if (current_idx_ < n_waypoints_ - 1) {
+    std::lock_guard<std::mutex> lock(mtx_);
+    if (current_idx_ < n_steps_ - 1) {
         ++current_idx_;
         return true;
     }
@@ -119,9 +136,11 @@ bool Interpolator::step() {
 }
 
 bool Interpolator::isDone() const {
-    return current_idx_ >= n_waypoints_ - 1;
+    std::lock_guard<std::mutex> lock(mtx_);
+    return current_idx_ >= n_steps_ - 1;
 }
 
 void Interpolator::reset() {
+    std::lock_guard<std::mutex> lock(mtx_);
     current_idx_ = 0;
 }

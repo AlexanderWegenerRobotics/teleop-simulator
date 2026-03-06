@@ -14,7 +14,7 @@ HeadControl::HeadControl(const YAML::Node& device_config)
         .comm_freq      = device_config["transmission"]["frequency"].as<int>(),
         .n_dof          = 2,
         .max_linear_vel = 0.1,
-        .max_angular_vel = 0.05
+        .max_angular_vel = 1.5
     })
 {
     name_ = device_config["name"].as<std::string>();
@@ -42,6 +42,8 @@ HeadControl::~HeadControl(){
 void HeadControl::start(){
     bRunning = true;
     state_ = SysState::IDLE;
+    Vector2 q_init = Vector2::Zero();
+    interpolator_.planJoint(q_init, q_init, ProfileType::TRAPEZOIDAL);
     control_thread = std::thread(&HeadControl::runControlHandler, this);
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     state_thread = std::thread(&HeadControl::runStateHandler, this);
@@ -82,7 +84,7 @@ void HeadControl::runStateHandler(){
                 std::lock_guard<std::mutex> lock(state_mtx);
                 q_current = current_state.q;
             }
-            interpolator_.planJoint(q_current, q0_);
+            interpolator_.planJoint(q_current, q0_, ProfileType::MINJERK);
         }
         else if (state_ == SysState::ENGAGED) {
             if (has_cmd) {
@@ -90,7 +92,7 @@ void HeadControl::runStateHandler(){
                 q_target(0) = static_cast<double>(cmd.pan);
                 q_target(1) = static_cast<double>(cmd.tilt);
                 q_target += q0_;
-                interpolator_.planJoint(interpolator_.getCurrentJoint(), q_target);
+                interpolator_.planJoint(interpolator_.getCurrentJoint(), q_target, ProfileType::LINEAR);
                 has_cmd = false;
             }
         }
@@ -164,6 +166,8 @@ void HeadControl::updateStateMachine(SysState cmd_state){
 }
 
 void HeadControl::runControlHandler() {
+    Vector2 tau_prev_ = Vector2::Zero();
+
     franka_joint_driver::Driver::CallbackFunctionTorque torque_control_callback =
         [&](const std::vector<Driver::State>& driver_state,
             std::vector<Driver::CommandTorque>& command) -> void {
@@ -193,6 +197,18 @@ void HeadControl::runControlHandler() {
             Vector2 q_cmd = interpolator_.getCurrentJoint();
             Vector2 e = q_cmd - q;
             Vector2 tau_cmd = kp_.cwiseProduct(e) - kd_.cwiseProduct(dq);
+
+            // joint limit proximity — scale down torque that drives into limits
+            for (int i = 0; i < 2; ++i) {
+                if ((q(i) >= q_max[i] && tau_cmd(i) > 0.0) ||
+                    (q(i) <= q_min[i] && tau_cmd(i) < 0.0))
+                    tau_cmd(i) = 0.0;
+            }
+
+            // rate limiter — clamp change from last torque, not magnitude
+            tau_cmd = (tau_cmd - tau_prev_).cwiseMax(-dtau_max).cwiseMin(dtau_max) + tau_prev_;
+            tau_cmd = tau_cmd.cwiseMax(-tau_max).cwiseMin(tau_max);
+            tau_prev_ = tau_cmd;
 
             if (logger_) {
                 double t = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - startTime_).count();
@@ -230,5 +246,5 @@ bool HeadControl::isHome() {
         dq = current_state.dq;
     }
     return (q0_ - q).cwiseAbs().maxCoeff() < 0.05 
-        && dq.cwiseAbs().maxCoeff() < 0.01;
+        && dq.cwiseAbs().maxCoeff() < 0.03;
 }

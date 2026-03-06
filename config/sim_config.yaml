@@ -1,7 +1,7 @@
 rendering:
-  enabled: false
+  enabled: true
   fps: 30
-  streaming: true
+  streaming: false
   stream_camera: "head_head_cam"
   stream_fps: 30
   stream_width: 1280

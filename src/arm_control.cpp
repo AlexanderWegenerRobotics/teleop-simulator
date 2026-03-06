@@ -11,7 +11,7 @@ ArmControl::ArmControl(const YAML::Node& device_config)
     , state_(SysState::OFFLINE)
     , interpolator_(InterpolatorConfig{
         .control_freq   = 1000,
-        .comm_freq      = 200,
+        .comm_freq      = device_config["transmission"]["frequency"].as<int>(),
         .n_dof          = 7,
         .max_linear_vel = 0.1,
         .max_angular_vel = 0.5
@@ -55,6 +55,8 @@ void ArmControl::start(){
     cmd_state_ = SysState::IDLE;
     current_state = robot->readOnce();
     model = std::make_unique<franka::Model>(robot->loadModel());
+    Eigen::Map<const Vector7> q_init(current_state.q.data());
+    interpolator_.planJoint(q_init, q_init, ProfileType::TRAPEZOIDAL);
     control_thread = std::thread(&ArmControl::runControlHandler, this);
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     state_thread = std::thread(&ArmControl::runStateHandler, this);
@@ -102,10 +104,9 @@ void ArmControl::runStateHandler(){
 
             if (has_cmd) {
                 Eigen::Vector3d pos(cmd.position[0], cmd.position[1], cmd.position[2]);
-                Eigen::Quaterniond q(cmd.quaternion[0], cmd.quaternion[1],
-                                     cmd.quaternion[2], cmd.quaternion[3]);
+                Eigen::Quaterniond q(cmd.quaternion[0], cmd.quaternion[1],cmd.quaternion[2], cmd.quaternion[3]);
                 T_cmd.translation() = pos;
-                T_cmd.linear()      = q.toRotationMatrix();
+                T_cmd.linear() = q.toRotationMatrix();
                 has_cmd = false;
             }
 
