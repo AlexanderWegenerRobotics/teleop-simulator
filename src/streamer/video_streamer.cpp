@@ -153,7 +153,7 @@ void VideoStreamer::pushFrame(const uint8_t* rgb, uint32_t width, uint32_t heigh
 
     size_t row_bytes    = width * 3;
     size_t image_bytes  = row_bytes * height;
-    size_t padded_bytes = image_bytes + row_bytes * 2;  // +2 rows for timestamp
+    size_t padded_bytes = image_bytes + row_bytes * 2;
 
     GstBuffer* buffer = gst_buffer_new_allocate(nullptr, padded_bytes, nullptr);
     if (!buffer) return;
@@ -167,15 +167,21 @@ void VideoStreamer::pushFrame(const uint8_t* rgb, uint32_t width, uint32_t heigh
         return;
     }
 
-    // Copy original RGB image data
     std::memcpy(map.data, rgb, image_bytes);
 
-    // Write timestamp row: first 8 bytes = wall-clock nanoseconds, rest = 0
     uint8_t* ts_row = map.data + image_bytes;
-    std::memset(ts_row, 0, row_bytes * 2);  // zero both extra rows
+    std::memset(ts_row, 0, row_bytes * 2);
 
-    uint64_t now_ns = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
-    std::memcpy(ts_row, &now_ns, sizeof(now_ns));
+    uint64_t now_ns = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+
+    for (int bit = 0; bit < 64; ++bit) {
+        uint8_t val = ((now_ns >> bit) & 1) ? 255 : 0;
+        ts_row[bit * 3 + 0] = val;
+        ts_row[bit * 3 + 1] = val;
+        ts_row[bit * 3 + 2] = val;
+    }
 
     gst_buffer_unmap(buffer, &map);
 
