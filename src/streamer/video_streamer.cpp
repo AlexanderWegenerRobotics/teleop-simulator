@@ -3,8 +3,7 @@
 #include <stdexcept>
 #include <iostream>
 #include <cstring>
-
-#include <unistd.h>
+#include <chrono>
 
 #include <gst/app/gstappsrc.h>
 
@@ -14,13 +13,6 @@ VideoStreamer::VideoStreamer(const StreamerConfig& config)
     gst_init(nullptr, nullptr);
     source_ = std::make_unique<MuJoCoSource>(config.shm_name, config.fps);
     target_fps_.store(config.fps);
-
-    ts_fd_ = socket(AF_INET, SOCK_DGRAM, 0);
-    if (ts_fd_ >= 0) {
-        ts_addr_.sin_family = AF_INET;
-        ts_addr_.sin_port   = htons(config.timestamp_port);
-        inet_pton(AF_INET, config.host.c_str(), &ts_addr_.sin_addr);
-    }
 }
 
 VideoStreamer::~VideoStreamer() {
@@ -73,14 +65,13 @@ void VideoStreamer::start() {
     std::cout << "[INFO] Streamer running on "
               << config_.host << ":" << config_.port
               << " " << source_->width() << "x" << source_->height()
-              << " @ " << config_.fps << "fps" << std::endl;
+              << "+1 (timestamp row) @ " << config_.fps << "fps" << std::endl;
 }
 
 void VideoStreamer::stop() {
     bRunning_ = false;
     if (source_) source_->stop();
     if (quality_) quality_->stop();
-    if (ts_fd_ >= 0) { close(ts_fd_); ts_fd_ = -1; }
 
     if (pipeline_) {
         gst_element_set_state(pipeline_, GST_STATE_NULL);
@@ -100,11 +91,15 @@ void VideoStreamer::stop() {
 }
 
 void VideoStreamer::buildPipeline() {
+    // Height + 2: the extra two rows carries an embedded wall-clock timestamp.
+    // The receiver reads and crops it before display.
+    int padded_height = source_->height() + 2;
+
     std::string pipeline_str =
         "appsrc name=src stream-type=0 format=3 is-live=true block=false"
         " caps=video/x-raw,format=RGB"
         ",width="      + std::to_string(source_->width())  +
-        ",height="     + std::to_string(source_->height()) +
+        ",height="     + std::to_string(padded_height)     +
         ",framerate="  + std::to_string(config_.fps) + "/1"
         " ! queue max-size-buffers=2 leaky=downstream"
         " ! videoconvert"
@@ -156,24 +151,15 @@ void VideoStreamer::pushFrame(const uint8_t* rgb, uint32_t width, uint32_t heigh
         }
     }
 
-    if (ts_fd_ >= 0) {
-        FrameTimestamp ts{};
-        ts.frame_number = frame_count_;
-        ts.sender_timestamp_ns = static_cast<uint64_t>(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count());
-        sendto(ts_fd_, reinterpret_cast<const char*>(&ts), sizeof(ts), 0,
-               reinterpret_cast<sockaddr*>(&ts_addr_), sizeof(ts_addr_));
-    }
+    size_t row_bytes    = width * 3;
+    size_t image_bytes  = row_bytes * height;
+    size_t padded_bytes = image_bytes + row_bytes * 2;  // +2 rows for timestamp
 
-    size_t size = width * height * 3;
-
-    GstBuffer* buffer = gst_buffer_new_allocate(nullptr, size, nullptr);
+    GstBuffer* buffer = gst_buffer_new_allocate(nullptr, padded_bytes, nullptr);
     if (!buffer) return;
 
-    GST_BUFFER_PTS(buffer) = frame_count_ * GST_SECOND / config_.fps;
+    GST_BUFFER_PTS(buffer)      = frame_count_ * GST_SECOND / config_.fps;
     GST_BUFFER_DURATION(buffer) = GST_SECOND / config_.fps;
-    frame_count_++;
 
     GstMapInfo map;
     if (!gst_buffer_map(buffer, &map, GST_MAP_WRITE)) {
@@ -181,8 +167,18 @@ void VideoStreamer::pushFrame(const uint8_t* rgb, uint32_t width, uint32_t heigh
         return;
     }
 
-    std::memcpy(map.data, rgb, size);
+    // Copy original RGB image data
+    std::memcpy(map.data, rgb, image_bytes);
+
+    // Write timestamp row: first 8 bytes = wall-clock nanoseconds, rest = 0
+    uint8_t* ts_row = map.data + image_bytes;
+    std::memset(ts_row, 0, row_bytes * 2);  // zero both extra rows
+
+    uint64_t now_ns = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+    std::memcpy(ts_row, &now_ns, sizeof(now_ns));
+
     gst_buffer_unmap(buffer, &map);
 
     gst_app_src_push_buffer(GST_APP_SRC(appsrc_), buffer);
+    frame_count_++;
 }

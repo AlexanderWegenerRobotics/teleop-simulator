@@ -4,9 +4,6 @@
 #include <memory>
 #include <string>
 #include <thread>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 
 #include <gst/gst.h>
 #include <gst/app/gstappsrc.h>
@@ -18,7 +15,6 @@ struct StreamerConfig {
     std::string host;
     int         port;
     int         feedback_port;
-    int         timestamp_port;
     int         fps;
     int         bitrate_kbps;
     int         fec_percentage;
@@ -27,6 +23,12 @@ struct StreamerConfig {
 
 class VideoStreamer {
 public:
+    /// Number of bytes in the timestamp row (RGB: width * 3).
+    /// First 8 bytes carry a uint64 wall-clock nanosecond timestamp,
+    /// rest is zero-filled.  The row is appended as the last row of
+    /// the frame so the encoder treats it as normal pixel data.
+    static constexpr size_t kTimestampBytes = 8;
+
     VideoStreamer(const StreamerConfig& config);
     ~VideoStreamer();
 
@@ -38,8 +40,8 @@ private:
     void pushFrame(const uint8_t* rgb, uint32_t width, uint32_t height);
 
 private:
-    StreamerConfig                config_;
-    std::unique_ptr<CameraSource> source_;
+    StreamerConfig                 config_;
+    std::unique_ptr<CameraSource>  source_;
 
     GstElement*       pipeline_    = nullptr;
     GstElement*       appsrc_      = nullptr;
@@ -52,6 +54,4 @@ private:
     GstElement* fec_     = nullptr;
     std::unique_ptr<StreamQualityController> quality_;
     std::atomic<int> target_fps_{0};
-    int ts_fd_ = -1;
-    struct sockaddr_in ts_addr_{};
 };
