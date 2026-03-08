@@ -3,8 +3,10 @@
 #include <fstream>
 #include <stdexcept>
 #include <filesystem>
+#include <unordered_map>
 #include <cmath>
 #include <cstdio>
+#include <iostream>
 
 #include <tinyxml2.h>
 
@@ -12,18 +14,16 @@ using namespace tinyxml2;
 
 
 // ===========================================================================
-// Internal TinyXML-2 helpers  (file-scope, not exposed in the header)
+// Internal TinyXML-2 helpers
 // ===========================================================================
 
 static std::unique_ptr<XMLDocument> loadXMLDoc(const std::string& path) {
     auto doc = std::make_unique<XMLDocument>();
     if (doc->LoadFile(path.c_str()) != XML_SUCCESS)
-        throw std::runtime_error("TinyXML2 failed to load: " + path +
-                                 "  (" + doc->ErrorStr() + ")");
+        throw std::runtime_error("TinyXML2 failed to load: " + path + "  (" + doc->ErrorStr() + ")");
     return doc;
 }
 
-// Deep-copy every child of src into dst (print/parse round-trip keeps ownership clean)
 static void deepCopyChildren(XMLElement* dst, XMLDocument& dstDoc, const XMLElement* src) {
     for (const XMLNode* child = src->FirstChild(); child; child = child->NextSibling()) {
         XMLPrinter printer;
@@ -41,8 +41,6 @@ static std::string docToString(XMLDocument& doc) {
     return printer.CStr();
 }
 
-// Merge all attributes from src <compiler> into dst, skipping meshdir
-// (paths are resolved to absolute separately).
 static void mergeCompilerAttributes(XMLElement* dst, const XMLElement* src) {
     for (const XMLAttribute* a = src->FirstAttribute(); a; a = a->Next()) {
         if (std::string(a->Name()) == "meshdir") continue;
@@ -50,7 +48,6 @@ static void mergeCompilerAttributes(XMLElement* dst, const XMLElement* src) {
     }
 }
 
-// Recursively prefix every name-like attribute in the tree with "<prefix>_"
 static void prefixNamesInTree(XMLElement* el, const std::string& prefix) {
     static const std::vector<const char*> kAttrs = {
         "name", "joint", "joint1", "joint2",
@@ -67,8 +64,6 @@ static void prefixNamesInTree(XMLElement* el, const std::string& prefix) {
         prefixNamesInTree(ch, prefix);
 }
 
-// MuJoCo derives a mesh name from the filename stem when name= is absent.
-// Materialise that name explicitly so it survives prefixing.
 static void normalizeMeshNames(XMLElement* assetEl) {
     for (XMLElement* el = assetEl->FirstChildElement("mesh");
          el; el = el->NextSiblingElement("mesh")) {
@@ -81,7 +76,6 @@ static void normalizeMeshNames(XMLElement* assetEl) {
     }
 }
 
-// Rewrite relative mesh file= paths to absolute using the resolved meshdir
 static void absoluteMeshPaths(XMLElement* assetEl, const std::string& meshdir) {
     for (XMLElement* el = assetEl->FirstChildElement("mesh");
          el; el = el->NextSiblingElement("mesh")) {
@@ -91,7 +85,6 @@ static void absoluteMeshPaths(XMLElement* assetEl, const std::string& meshdir) {
     }
 }
 
-// Resolve the meshdir declared in a robot/object compiler element to an absolute path
 static std::string resolveMeshdir(const XMLElement* compilerEl,
                                    const std::string& modelPath) {
     if (!compilerEl) return {};
@@ -101,8 +94,6 @@ static std::string resolveMeshdir(const XMLElement* compilerEl,
         std::filesystem::path(modelPath).parent_path() / md).string();
 }
 
-// Inject one XML model (robot or prop) into the scene, prefixing all names.
-// Returns without error if the document has no worldbody (shouldn't happen).
 static void injectModel(const std::string& modelPath,
                         const std::string& namePrefix,
                         const std::array<double, 3>& pos,
@@ -115,34 +106,27 @@ static void injectModel(const std::string& modelPath,
     auto doc = loadXMLDoc(modelPath);
     XMLElement* docRoot = doc->RootElement();
 
-    // 1. Merge compiler flags (autolimits, angle, …) — skip meshdir
     if (XMLElement* comp = docRoot->FirstChildElement("compiler"))
         mergeCompilerAttributes(compilerEl, comp);
 
-    // 2. Resolve meshdir before we mangle any attributes
     std::string meshdir = resolveMeshdir(
         docRoot->FirstChildElement("compiler"), modelPath);
 
-    // 3. Normalise unnamed meshes so prefixing keeps geom references in sync
     if (XMLElement* ra = docRoot->FirstChildElement("asset"))
         normalizeMeshNames(ra);
 
-    // 4. Prefix every name in the document
     prefixNamesInTree(docRoot, namePrefix);
 
-    // 5. <default> blocks
     for (XMLElement* def = docRoot->FirstChildElement("default");
          def; def = def->NextSiblingElement("default"))
         root->InsertEndChild(def->DeepClone(&scene));
 
-    // 6. <asset> children
     if (XMLElement* ra = docRoot->FirstChildElement("asset")) {
         if (!meshdir.empty())
             absoluteMeshPaths(ra, meshdir);
         deepCopyChildren(assetEl, scene, ra);
     }
 
-    // 7. <worldbody> children wrapped in a named frame body
     if (XMLElement* rw = docRoot->FirstChildElement("worldbody")) {
         XMLElement* frame = scene.NewElement("body");
         frame->SetAttribute("name", (namePrefix + "_frame").c_str());
@@ -159,7 +143,6 @@ static void injectModel(const std::string& modelPath,
         worldbody->InsertEndChild(frame);
     }
 
-    // 8. Remaining top-level blocks (actuator, tendon, equality, contact)
     for (const char* tag : {"actuator", "tendon", "equality", "contact"})
         for (XMLElement* el = docRoot->FirstChildElement(tag);
              el; el = el->NextSiblingElement(tag))
@@ -171,17 +154,17 @@ static void injectModel(const std::string& modelPath,
 // SceneBuilder — public interface
 // ===========================================================================
 
-BuiltScene SceneBuilder::build(const YAML::Node& config) {
+BuiltScene SceneBuilder::build(const YAML::Node& sim_config, const YAML::Node& robot_config) {
     BuiltScene result;
-    result.devices = parseDevices(config);
-    result.objects = parseObjects(config);
-    result.cameras = parseCameras(config);
+    result.devices = parseDevices(sim_config, robot_config);
+    result.objects = parseObjects(sim_config);
+    result.cameras = parseCameras(sim_config);
 
     std::string baseScenePath;
-    if (config["simulation"] && config["simulation"]["model_path"])
-        baseScenePath = config["simulation"]["model_path"].as<std::string>();
+    if (sim_config["simulation"] && sim_config["simulation"]["model_path"])
+        baseScenePath = sim_config["simulation"]["model_path"].as<std::string>();
 
-    std::string xml = buildSceneXML(result.devices, result.objects,result.cameras, baseScenePath);
+    std::string xml = buildSceneXML(result.devices, result.objects, result.cameras, baseScenePath);
 
     result.xml_path =
         std::filesystem::path(baseScenePath).parent_path() / "_generated_scene.xml";
@@ -201,44 +184,58 @@ BuiltScene SceneBuilder::build(const YAML::Node& config) {
 // YAML parsing
 // ===========================================================================
 
-std::vector<DeviceConfig> SceneBuilder::parseDevices(const YAML::Node& config) {
-    std::vector<DeviceConfig> devices;
-    if (!config["devices"]) return devices;
+std::vector<DeviceConfig> SceneBuilder::parseDevices(const YAML::Node& sim_config,
+                                                      const YAML::Node& robot_config) {
+    std::unordered_map<std::string, YAML::Node> sim_devs;
+    if (sim_config["devices"])
+        for (const auto& sd : sim_config["devices"])
+            sim_devs[sd["name"].as<std::string>()] = YAML::Node(sd);
 
-    for (const auto& node : config["devices"]) {
-        if (node["enabled"] && !node["enabled"].as<bool>()) continue;
+    std::vector<DeviceConfig> devices;
+    if (!robot_config["devices"]) return devices;
+
+    for (const auto& rd : robot_config["devices"]) {
+        if (rd["enabled"] && !rd["enabled"].as<bool>()) continue;
+
+        std::string name = rd["name"].as<std::string>();
+
+        auto it = sim_devs.find(name);
+        if (it == sim_devs.end()) {
+            std::cerr << "[SceneBuilder] WARNING: device '" << name
+                      << "' in robot_config has no sim_config entry — skipping.\n";
+            continue;
+        }
+        const YAML::Node& sd = it->second;
 
         DeviceConfig dev;
-        dev.name       = node["name"].as<std::string>();
-        dev.type       = node["type"].as<std::string>();
-        dev.enabled    = node["enabled"] ? node["enabled"].as<bool>() : true;
-        dev.model_path = node["model_path"].as<std::string>();
-        dev.root_body  = node["root_body"].as<std::string>();
+        dev.name             = name;
+        dev.type             = rd["type"].as<std::string>();
+        dev.enabled          = true;
+        dev.model_path       = sd["model_path"].as<std::string>();
+        dev.root_body        = sd["root_body"].as<std::string>();
+        dev.gripper_actuator = sd["gripper_actuator"] ? sd["gripper_actuator"].as<std::string>() : "";
 
-        auto pos = node["base_pose"]["position"];
+        auto pos = rd["base_pose"]["position"];
         dev.position = {pos[0].as<double>(), pos[1].as<double>(), pos[2].as<double>()};
 
-        auto ori = node["base_pose"]["orientation"];
+        auto ori = rd["base_pose"]["orientation"];
         dev.orientation = {ori[0].as<double>(), ori[1].as<double>(),
                            ori[2].as<double>(), ori[3].as<double>()};
 
-        if (node["q0"])
-            for (const auto& q : node["q0"])
+        if (rd["q0"])
+            for (const auto& q : rd["q0"])
                 dev.q0.push_back(q.as<double>());
-
-        if (node["gripper_actuator"])
-            dev.gripper_actuator = node["gripper_actuator"].as<std::string>();
 
         devices.push_back(dev);
     }
     return devices;
 }
 
-std::vector<ObjectConfig> SceneBuilder::parseObjects(const YAML::Node& config) {
+std::vector<ObjectConfig> SceneBuilder::parseObjects(const YAML::Node& sim_config) {
     std::vector<ObjectConfig> objects;
-    if (!config["objects"]) return objects;
+    if (!sim_config["objects"]) return objects;
 
-    for (const auto& node : config["objects"]) {
+    for (const auto& node : sim_config["objects"]) {
         ObjectConfig obj;
         obj.name       = node["name"].as<std::string>();
         obj.type       = node["type"].as<std::string>();
@@ -256,12 +253,13 @@ std::vector<ObjectConfig> SceneBuilder::parseObjects(const YAML::Node& config) {
     return objects;
 }
 
-std::vector<CameraConfig> SceneBuilder::parseCameras(const YAML::Node& config) {
+std::vector<CameraConfig> SceneBuilder::parseCameras(const YAML::Node& sim_config) {
     std::vector<CameraConfig> cameras;
-    if (!config["cameras"]) return cameras;
+    if (!sim_config["cameras"]) return cameras;
 
-    for (const auto& node : config["cameras"]) {
-        if(!node["enabled"].as<bool>()) continue; 
+    for (const auto& node : sim_config["cameras"]) {
+        if (!node["enabled"].as<bool>()) continue;
+
         CameraConfig cam;
         cam.name = node["name"].as<std::string>();
         cam.type = node["type"].as<std::string>();
@@ -280,53 +278,32 @@ std::vector<CameraConfig> SceneBuilder::parseCameras(const YAML::Node& config) {
     return cameras;
 }
 
-// ---------------------------------------------------------------------------
-// look_at → MuJoCo camera quaternion
-//
-// MuJoCo camera convention: looks along -Z, +Y is up in camera space.
-// We build a rotation matrix whose columns are the world-space right/up/back
-// vectors of the camera, then convert to quaternion.
-// ---------------------------------------------------------------------------
 std::array<double, 4> SceneBuilder::lookAtToQuat(const std::array<double, 3>& pos,
                                                    const std::array<double, 3>& look_at) {
-    // Forward vector (from camera toward target) in world space
     double fx = look_at[0] - pos[0];
     double fy = look_at[1] - pos[1];
     double fz = look_at[2] - pos[2];
     double flen = std::sqrt(fx*fx + fy*fy + fz*fz);
-    if (flen < 1e-9) return {1.0, 0.0, 0.0, 0.0}; // degenerate — identity
+    if (flen < 1e-9) return {1.0, 0.0, 0.0, 0.0};
     fx /= flen; fy /= flen; fz /= flen;
 
-    // World up hint — switch to X if forward is nearly parallel to Z
     double wx = 0.0, wy = 0.0, wz = 1.0;
     if (std::abs(fz) > 0.999) { wx = 1.0; wy = 0.0; wz = 0.0; }
 
-    // Right = forward × up_hint
     double rx = fy*wz - fz*wy;
     double ry = fz*wx - fx*wz;
     double rz = fx*wy - fy*wx;
     double rlen = std::sqrt(rx*rx + ry*ry + rz*rz);
     rx /= rlen; ry /= rlen; rz /= rlen;
 
-    // Camera up = right × forward
     double ux = ry*fz - rz*fy;
     double uy = rz*fx - rx*fz;
     double uz = rx*fy - ry*fx;
 
-    // Rotation matrix R maps world axes to camera frame:
-    //   camera -Z = forward  →  R col2 =  (fx, fy, fz)  but stored as -Z so negate
-    //   camera +Y = up       →  R col1 =  (ux, uy, uz)
-    //   camera +X = right    →  R col0 =  (rx, ry, rz)
-    //
-    // Written as a 3×3 row-major matrix where R * e_camX = world_right etc.:
-    //   | rx  ux  -fx |
-    //   | ry  uy  -fy |
-    //   | rz  uz  -fz |
     double m00 = rx,  m01 = ux,  m02 = -fx;
     double m10 = ry,  m11 = uy,  m12 = -fy;
     double m20 = rz,  m21 = uz,  m22 = -fz;
 
-    // Rotation matrix → quaternion (Shepperd method)
     double trace = m00 + m11 + m22;
     double qw, qx, qy, qz;
     if (trace > 0.0) {
@@ -355,7 +332,6 @@ std::array<double, 4> SceneBuilder::lookAtToQuat(const std::array<double, 3>& po
         qz = 0.25 * s;
     }
 
-    // MuJoCo quaternion convention: w x y z
     return {qw, qx, qy, qz};
 }
 
@@ -373,7 +349,6 @@ std::string SceneBuilder::buildSceneXML(const std::vector<DeviceConfig>& devices
     root->SetAttribute("model", "scene");
     scene.InsertFirstChild(root);
 
-    // Bare compiler element — attributes are merged in from each loaded model
     XMLElement* compilerEl = scene.NewElement("compiler");
     root->InsertEndChild(compilerEl);
 
@@ -387,9 +362,6 @@ std::string SceneBuilder::buildSceneXML(const std::vector<DeviceConfig>& devices
     root->InsertEndChild(assetEl);
     root->InsertEndChild(worldbody);
 
-    // -----------------------------------------------------------------------
-    // Base scene (lights, ground plane, etc.)
-    // -----------------------------------------------------------------------
     {
         auto baseDoc  = loadXMLDoc(baseScenePath);
         XMLElement* baseRoot = baseDoc->RootElement();
@@ -399,25 +371,16 @@ std::string SceneBuilder::buildSceneXML(const std::vector<DeviceConfig>& devices
             deepCopyChildren(worldbody, scene, bw);
     }
 
-    // -----------------------------------------------------------------------
-    // Devices  (actuated robots)
-    // -----------------------------------------------------------------------
     for (const auto& dev : devices)
         injectModel(dev.model_path, dev.name,
                     dev.position, dev.orientation,
                     scene, compilerEl, assetEl, worldbody, root);
 
-    // -----------------------------------------------------------------------
-    // Objects  (static props, visual markers)
-    // -----------------------------------------------------------------------
     for (const auto& obj : objects)
         injectModel(obj.model_path, obj.name,
                     obj.position, obj.orientation,
                     scene, compilerEl, assetEl, worldbody, root);
 
-    // -----------------------------------------------------------------------
-    // Cameras  (injected directly as <camera> elements in worldbody)
-    // -----------------------------------------------------------------------
     for (const auto& cam : cameras) {
         XMLElement* camEl = scene.NewElement("camera");
         camEl->SetAttribute("name", cam.name.c_str());

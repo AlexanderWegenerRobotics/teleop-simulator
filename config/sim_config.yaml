@@ -1,74 +1,30 @@
 rendering:
   enabled: true
   fps: 30
-  streaming: false
-  stream_camera: "head_head_cam"
-  stream_fps: 30
-  stream_width: 1280
-  stream_height: 720
 
 simulation:
   timestep: 0.001
   control_frequency: 1000
   model_path: "../models/mujoco/scenes/world_scene.xml"
 
-transmission:
-  remote_ip: "127.0.0.1"
-  send_port: 8000
-  receive_port: 7000
-  frequency: 20
-
 devices:
   - name: arm_left
-    type: arm
-    enabled: True
     model_path: "../models/mujoco/robots/franka_fr3/fr3_torque.xml"
     urdf_path: "../models/urdf/franka_fr3/panda.urdf"
     root_body: "link0"
     urdf_ee_name: "fr3_link8"
     gripper_actuator: "actuator8"
-    base_pose:
-      position: [0, 0.6, 0.8]
-      orientation: [0.5, -0.5,  0.5, -0.5]
-    q0: [0.0, -0.785398, 0.0, -2.356194, 0.0, 1.570796, 0.785398]
-    transmission:
-      remote_ip: "127.0.0.1"
-      send_port: 8001
-      receive_port: 7001
-      frequency: 200
 
   - name: right_arm
-    type: arm
-    enabled: True
     model_path: "../models/mujoco/robots/franka_fr3/fr3_torque.xml"
     urdf_path: "../models/urdf/franka_fr3/panda.urdf"
     root_body: "link0"
     urdf_ee_name: "fr3_link8"
     gripper_actuator: "actuator8"
-    base_pose:
-      position: [0, -0.6, 0.8]
-      orientation: [0.5, 0.5, 0.5, 0.5]
-    q0: [0.0, -0.785398, 0.0, -2.356194, 0.0, 1.570796, 0.785398]
-    transmission:
-      remote_ip: "127.0.0.1"
-      send_port: 8002
-      receive_port: 7002
-      frequency: 200
 
   - name: head
-    type: head
-    enabled: True
     model_path: "../models/mujoco/robots/pan_tilt_dummy/pan_tilt_dummy.xml"
     root_body: "base"
-    base_pose:
-      position: [0, 0, 1.2]
-      orientation: [1, 0, 0, 0]
-    q0: [0.0, -0.4]
-    transmission:
-      remote_ip: "127.0.0.1"
-      send_port: 8003
-      receive_port: 7003
-      frequency: 200
 
 objects:
   - name: table

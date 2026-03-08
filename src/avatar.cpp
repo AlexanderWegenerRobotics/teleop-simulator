@@ -3,44 +3,48 @@
 
 #include <iostream>
 
-Avatar::Avatar(const YAML::Node& config){
-
-    YAML::Node sys_config;
-    #ifndef WITH_FRANKA
-        sys_config = YAML::LoadFile(config["sim_config"].as<std::string>());
-        sim_ = std::make_shared<Simulation>(sys_config);
-    #else
-        sys_config = YAML::LoadFile(config["robot_config"].as<std::string>());
-    #endif
+Avatar::Avatar(const YAML::Node& config) {
+    YAML::Node sys_config = YAML::LoadFile(config["robot_config"].as<std::string>());
 
     for (const auto& dev : sys_config["devices"]) {
         if (!dev["enabled"].as<bool>(true)) continue;
-
-        std::string name = dev["name"].as<std::string>();
         std::string type = dev["type"].as<std::string>();
 
         if (type == "arm") {
-            ArmControl* arm = new ArmControl(dev);
-            if (sim_) arm->robot->set_simulation(*sim_, dev);
-            arm_instances.push_back(arm);
-        }
-        else if (type == "head") {
-            HeadControl* head = new HeadControl(dev);
-            if (sim_) head->module->set_simulation(*sim_, dev);
-            head_instances.push_back(head);
+            arm_instances.push_back(new ArmControl(dev));
+        } else if (type == "head") {
+            head_instances.push_back(new HeadControl(dev));
         }
     }
 
-    if (sys_config["transmission"]) {
+    if (sys_config["avatar"]["transmission"]) {
         TransmissionConfig tx_config{
-            .remote_ip    = sys_config["transmission"]["remote_ip"].as<std::string>(),
-            .send_port    = sys_config["transmission"]["send_port"].as<int>(),
-            .receive_port = sys_config["transmission"]["receive_port"].as<int>(),
-            .frequency    = sys_config["transmission"]["frequency"].as<int>(),
+            .remote_ip    = sys_config["avatar"]["transmission"]["remote_ip"].as<std::string>(),
+            .send_port    = sys_config["avatar"]["transmission"]["send_port"].as<int>(),
+            .receive_port = sys_config["avatar"]["transmission"]["receive_port"].as<int>(),
+            .frequency    = sys_config["avatar"]["transmission"]["frequency"].as<int>(),
             .role         = TransmissionRole::AVATAR
         };
         transmission_ = std::make_unique<Transmission>(tx_config);
     }
+
+#ifndef WITH_FRANKA
+    sim_ = std::make_shared<Simulation>(config);
+
+    YAML::Node sim_config = YAML::LoadFile(config["sim_config"].as<std::string>());
+    std::unordered_map<std::string, YAML::Node> sim_devs;
+    for (const auto& sd : sim_config["devices"])
+        sim_devs[sd["name"].as<std::string>()] = YAML::Node(sd);
+
+    std::unordered_map<std::string, YAML::Node> robot_devs;
+    for (const auto& rd : sys_config["devices"])
+        robot_devs[rd["name"].as<std::string>()] = YAML::Node(rd);
+
+    for (auto& arm : arm_instances)
+        arm->robot->set_simulation(*sim_, sim_devs[arm->getDeviceName()], robot_devs[arm->getDeviceName()]);
+    for (auto& head : head_instances)
+        head->module->set_simulation(*sim_, sim_devs[head->getDeviceName()]);
+#endif
 }
 
 Avatar::~Avatar(){

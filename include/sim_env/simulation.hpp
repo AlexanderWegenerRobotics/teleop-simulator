@@ -15,10 +15,10 @@
 #include "sim_env/scene_builder.hpp"
 
 struct DeviceState {
-    std::vector<double> q;      // joint positions
-    std::vector<double> dq;     // joint velocities
-    std::vector<double> tau_J;  // measured torques (from qfrc_actuator)
-    std::vector<double> tau_ext; // external torques (from qfrc_constraint or GMO)
+    std::vector<double> q;
+    std::vector<double> dq;
+    std::vector<double> tau_J;
+    std::vector<double> tau_ext;
 };
 
 
@@ -47,12 +47,11 @@ private:
     void run_rendering();
     void applyInitialPositions();
     void buildActuatorIndex();
-    const std::vector<int>& getJointActuatorIds(const std::string& deviceName) const;
     std::mutex data_mtx;
     std::vector<double> ctrl_buffer_;
     std::mutex          ctrl_mtx_;
     std::unordered_map<std::string, std::vector<int>> actuator_ids_;
-    std::unordered_map<std::string, int> gripper_ids_;
+    std::unordered_map<std::string, int>              gripper_ids_;
     std::unordered_map<std::string, std::vector<int>> joint_ids_;
     std::atomic<bool> bModelIsRunning{false};
     std::atomic<bool> bRenderingIsRunning{false};
@@ -61,28 +60,27 @@ private:
     std::unique_ptr<SharedMemoryWriter> shm_writer_;
 
 private:
-    // Rendering
     struct CamEntry { std::string name; int id; };
 
     mjvScene    scn_;
     mjvOption   vopt_;
     mjrContext  con_;
-    mjData*              snap_[2]     = {nullptr, nullptr};
-    std::atomic<int>     snap_write_  {0};
-    std::atomic<int>     snap_read_   {1};
-    int  render_fps_     = 20;
+    mjData*          snap_[2]    = {nullptr, nullptr};
+    std::atomic<int> snap_write_ {0};
+    std::atomic<int> snap_read_  {1};
+    int  render_fps_ = 20;
     void buildCameraList();
     void initRendering();
     void renderFrame();
     void swapSnapshots();
 
 public:
-    GLFWwindow* window_ = nullptr;
-    bool render_enabled_ = false;
-    std::vector<CamEntry> render_cams_;
-    bool shm_enabled_;
-    std::string stream_camera_;
+    GLFWwindow* window_          = nullptr;
     GLFWwindow* offscreen_window_ = nullptr;
+    bool        render_enabled_  = false;
+    bool        shm_enabled_     = false;
+    std::string stream_camera_;
+    std::vector<CamEntry> render_cams_;
 
 private:
     mjvScene    stream_scn_;

@@ -16,10 +16,11 @@
 // ---------------------------------------------------------------------------
 
 Simulation::Simulation(const YAML::Node& config) {
-    BuiltScene scene = SceneBuilder::build(config);
+    YAML::Node sim_config    = YAML::LoadFile(config["sim_config"].as<std::string>());
+    YAML::Node robot_config  = YAML::LoadFile(config["robot_config"].as<std::string>());
+    YAML::Node stream_config = YAML::LoadFile(config["streamer_config"].as<std::string>());
 
-    shm_enabled_ = config["rendering"] && config["rendering"]["streaming"].as<bool>(false);
-    stream_camera_ = config["rendering"]["stream_camera"].as<std::string>("");
+    BuiltScene scene = SceneBuilder::build(sim_config, robot_config);
 
     devices_ = std::move(scene.devices);
     objects_ = std::move(scene.objects);
@@ -30,27 +31,26 @@ Simulation::Simulation(const YAML::Node& config) {
     if (!model)
         throw std::runtime_error(std::string("mj_loadXML failed: ") + err);
 
-    if (config["simulation"] && config["simulation"]["timestep"])
-        model->opt.timestep = config["simulation"]["timestep"].as<double>();
+    if (sim_config["simulation"] && sim_config["simulation"]["timestep"])
+        model->opt.timestep = sim_config["simulation"]["timestep"].as<double>();
 
     data = mj_makeData(model);
     if (!data)
         throw std::runtime_error("mj_makeData failed");
 
     ctrl_buffer_.assign(model->nu, 0.0);
-
     buildActuatorIndex();
     applyInitialPositions();
 
-    render_enabled_ = config["rendering"] && config["rendering"]["enabled"].as<bool>();
-    if (config["rendering"] && config["rendering"]["fps"])
-        render_fps_ = config["rendering"]["fps"].as<int>();
+    render_enabled_ = sim_config["rendering"] && sim_config["rendering"]["enabled"].as<bool>(false);
+    if (sim_config["rendering"] && sim_config["rendering"]["fps"])
+        render_fps_ = sim_config["rendering"]["fps"].as<int>();
 
-    if (config["rendering"]) {
-        stream_fps_    = config["rendering"]["stream_fps"].as<int>(30);
-        stream_width_  = config["rendering"]["stream_width"].as<int>(model->vis.global.offwidth);
-        stream_height_ = config["rendering"]["stream_height"].as<int>(model->vis.global.offheight);
-    }
+    shm_enabled_   = stream_config["enabled"].as<bool>(false);
+    stream_camera_ = stream_config["stream_camera"].as<std::string>("");
+    stream_fps_    = stream_config["stream_fps"].as<int>(30);
+    stream_width_  = stream_config["stream_width"].as<int>(model->vis.global.offwidth);
+    stream_height_ = stream_config["stream_height"].as<int>(model->vis.global.offheight);
 
     snap_[0] = mj_copyData(nullptr, model, data);
     snap_[1] = mj_copyData(nullptr, model, data);
@@ -107,9 +107,8 @@ void Simulation::run_model() {
             std::lock_guard<std::mutex> lock(data_mtx);
             {
                 std::lock_guard<std::mutex> ctrl_lock(ctrl_mtx_);
-                for (int i = 0; i < model->nu; ++i){
+                for (int i = 0; i < model->nu; ++i)
                     data->ctrl[i] = ctrl_buffer_[i];
-                }
             }
             mj_step(model, data);
             swapSnapshots();
@@ -122,7 +121,7 @@ void Simulation::run_model() {
 
 
 // ---------------------------------------------------------------------------
-// Rendering (on-screen window with camera grid)
+// Rendering
 // ---------------------------------------------------------------------------
 
 void Simulation::buildCameraList() {
@@ -179,7 +178,6 @@ void Simulation::run_rendering() {
 
     mjv_freeScene(&scn_);
     mjr_freeContext(&con_);
-
     bRenderingIsRunning = false;
 }
 
@@ -230,7 +228,7 @@ void Simulation::swapSnapshots() {
 
 
 // ---------------------------------------------------------------------------
-// Offscreen streaming (independent of window rendering)
+// Offscreen streaming
 // ---------------------------------------------------------------------------
 
 void Simulation::initOffscreenStreaming() {
@@ -254,9 +252,8 @@ void Simulation::initOffscreenStreaming() {
 
 void Simulation::renderStreamFrame() {
     int cam_id = -1;
-    for (const auto& c : render_cams_) {
+    for (const auto& c : render_cams_)
         if (c.name == stream_camera_) { cam_id = c.id; break; }
-    }
     if (cam_id < 0) return;
 
     int r = snap_read_.load(std::memory_order_acquire);
@@ -325,7 +322,6 @@ void Simulation::setCtrl(const std::string& deviceName,
         return;
     }
     const auto& ids = it->second;
-
     std::lock_guard<std::mutex> lock(ctrl_mtx_);
     for (size_t i = 0; i < values.size() && i < ids.size(); ++i)
         ctrl_buffer_[ids[i]] = values[i];
@@ -338,7 +334,6 @@ void Simulation::setGripper(const std::string& deviceName, double value) {
                   << "' has no gripper actuator defined\n";
         return;
     }
-
     std::lock_guard<std::mutex> lock(ctrl_mtx_);
     ctrl_buffer_[it->second] = value;
 }
@@ -355,7 +350,6 @@ void Simulation::buildActuatorIndex() {
             gripperFullName = dev.name + "_" + dev.gripper_actuator;
 
         std::vector<int> jointActuators;
-        std::vector<int> joints;
         int gripperId = -1;
 
         for (int i = 0; i < model->nu; ++i) {
@@ -369,6 +363,7 @@ void Simulation::buildActuatorIndex() {
                 jointActuators.push_back(i);
         }
 
+        std::vector<int> joints;
         for (int j = 0; j < model->njnt; ++j) {
             const char* jname = mj_id2name(model, mjOBJ_JOINT, j);
             if (jname && std::string(jname).rfind(dev.name + "_", 0) == 0)

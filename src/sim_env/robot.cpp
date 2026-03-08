@@ -21,21 +21,16 @@ Robot::Robot() {
 
 Robot::~Robot() {}
 
-
-void Robot::set_simulation(Simulation& _sim, const YAML::Node& device_config) {
-    sim   = &_sim;
-    name_ = device_config["name"].as<std::string>();
-
-    // load urdf from config
-    std::string urdf_path = device_config["urdf_path"].as<std::string>();
-    
-    // get ee frame name from config, default fallback if not set
-    ee_frame_name_ = device_config["urdf_ee_name"] 
-                     ? device_config["urdf_ee_name"].as<std::string>() 
+void Robot::set_simulation(Simulation& _sim, const YAML::Node& sim_dev, const YAML::Node& robot_dev) {
+    sim          = &_sim;
+    name_        = sim_dev["name"].as<std::string>();
+    ee_frame_name_ = sim_dev["urdf_ee_name"]
+                     ? sim_dev["urdf_ee_name"].as<std::string>()
                      : "panda_link8";
 
-    // get base orientation for gravity rotation
-    auto ori = device_config["base_pose"]["orientation"].as<std::vector<double>>();
+    std::string urdf_path = sim_dev["urdf_path"].as<std::string>();
+
+    auto ori = robot_dev["base_pose"]["orientation"].as<std::vector<double>>();
     std::array<double, 4> base_quat = {ori[0], ori[1], ori[2], ori[3]};
 
     model_ = std::make_unique<franka::Model>(urdf_path, base_quat, ee_frame_name_);

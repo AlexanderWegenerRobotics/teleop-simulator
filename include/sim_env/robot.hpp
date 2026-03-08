@@ -55,7 +55,7 @@ public:
     Robot();
     ~Robot();
 
-    void set_simulation(Simulation& sim, const YAML::Node& device_config);
+    void set_simulation(Simulation& _sim, const YAML::Node& sim_dev, const YAML::Node& robot_dev);
     Model& loadModel();
     RobotState readOnce();
     void control(std::function<Torques(const RobotState&, Duration)> control_callback);

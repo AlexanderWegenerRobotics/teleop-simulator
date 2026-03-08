@@ -1,8 +1,14 @@
+enabled: false
+
 host: "10.112.24.173"
 port: 5004
 feedback_port: 5005
 timestamp_port: 5006
-fps: 30
 bitrate_kbps: 2000
 fec_percentage: 10
 shm_name: "/avatar_cam"
+
+stream_camera: "head_head_cam"
+stream_fps: 30
+stream_width: 1280
+stream_height: 720
