@@ -56,9 +56,8 @@ private:
     const Vector2 kd_ = (Vector2() << 5.0, 5.0).finished();
     double q_min[2]     = {-2.78, -1.57};
     double q_max[2]     = { 2.78,  1.57};
-    double tau_dot_max  = 500.0;
-    double tau_max = 15.0;
-    double dtau_max     = tau_dot_max * 1e-3;
+    Vector2 tau_max_;
+    Vector2 tau_rate_max_;
 
 private:
     void runControlHandler();

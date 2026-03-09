@@ -22,6 +22,11 @@ HeadControl::HeadControl(const YAML::Node& device_config)
     auto q0_vec = device_config["q0"].as<std::vector<double>>();
     q0_ = Eigen::Map<const Vector2>(q0_vec.data());
 
+    auto tau_max_vec = device_config["max_torque"].as<std::vector<double>>();
+    tau_max_ = Eigen::Map<const Vector2>(tau_max_vec.data());
+    auto tau_rate_max_vec_ = device_config["max_torque_rate"].as<std::vector<double>>();
+    tau_rate_max_ = Eigen::Map<const Vector2>(tau_rate_max_vec_.data());
+
     if (device_config["transmission"]) {
         TransmissionConfig tx_config{
             .remote_ip    = device_config["transmission"]["remote_ip"].as<std::string>(),
@@ -211,9 +216,9 @@ void HeadControl::runControlHandler() {
                     tau_cmd(i) = 0.0;
             }
 
-            // rate limiter — clamp change from last torque, not magnitude
-            tau_cmd = (tau_cmd - tau_prev_).cwiseMax(-dtau_max).cwiseMin(dtau_max) + tau_prev_;
-            tau_cmd = tau_cmd.cwiseMax(-tau_max).cwiseMin(tau_max);
+            // rate limit & torque limit
+            tau_cmd = tau_prev_ + (tau_cmd - tau_prev_).cwiseMax(-tau_rate_max_).cwiseMin(tau_rate_max_);
+            tau_cmd = tau_cmd.cwiseMax(-tau_max_).cwiseMin(tau_max_);
             tau_prev_ = tau_cmd;
 
             if (logger_) {
