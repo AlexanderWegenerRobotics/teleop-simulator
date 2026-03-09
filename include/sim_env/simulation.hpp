@@ -33,6 +33,7 @@ public:
     void setCtrl(const std::string& deviceName, const std::vector<double>& values);
     void setGripper(const std::string& deviceName, double value);
     DeviceState getDeviceState(const std::string& deviceName);
+    void setDeviceActive(const std::string& deviceName, bool state);
 
 private:
     mjModel* model = nullptr;
@@ -53,6 +54,7 @@ private:
     std::unordered_map<std::string, std::vector<int>> actuator_ids_;
     std::unordered_map<std::string, int>              gripper_ids_;
     std::unordered_map<std::string, std::vector<int>> joint_ids_;
+    std::unordered_map<std::string, bool> active_devices_;
     std::atomic<bool> bModelIsRunning{false};
     std::atomic<bool> bRenderingIsRunning{false};
     std::thread       model_thread;

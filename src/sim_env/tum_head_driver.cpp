@@ -27,6 +27,7 @@ Driver::Error Driver::control(const Driver::CallbackFunctionTorque& driver_callb
     constexpr std::chrono::microseconds control_period(static_cast<int>(1e6 / 1000));
     auto next_control_time = std::chrono::high_resolution_clock::now();
 
+    sim->setDeviceActive(name_, true);
     Driver::Error return_val = Driver::Error::kNoError;
     while (bRunning) 
     {
@@ -52,5 +53,6 @@ Driver::Error Driver::control(const Driver::CallbackFunctionTorque& driver_callb
         next_control_time += control_period;
         std::this_thread::sleep_until(next_control_time);
     }
+    sim->setDeviceActive(name_, false);
     return return_val;
 }

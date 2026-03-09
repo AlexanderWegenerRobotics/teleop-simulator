@@ -89,8 +89,7 @@ void Interpolator::planJoint(const Eigen::VectorXd& q_start, const Eigen::Vector
     current_idx_     = 0;
 }
 
-void Interpolator::planCartesian(const Eigen::Isometry3d& T_start, const Eigen::Isometry3d& T_end,
-                                  ProfileType profile) {
+void Interpolator::planCartesian(const Eigen::Isometry3d& T_start, const Eigen::Isometry3d& T_end, ProfileType profile) {
     int n_steps = computeCartesianSteps(T_start, T_end);
     std::vector<Eigen::Isometry3d> waypoints(n_steps);
 
@@ -106,7 +105,6 @@ void Interpolator::planCartesian(const Eigen::Isometry3d& T_start, const Eigen::
         T.linear()      = q_start.slerp(s, q_end).toRotationMatrix();
         waypoints[i]    = T;
     }
-
     std::lock_guard<std::mutex> lock(mtx_);
     space_               = InterpolationSpace::CARTESIAN;
     n_steps_             = n_steps;

@@ -25,10 +25,9 @@ public:
     std::array<double, 7>  coriolis(const std::array<double, 7>& q, const std::array<double, 7>& dq);
     std::array<double, 7>  gravity(const std::array<double, 7>& q);
     std::array<double, 16> EEPose(const std::array<double, 7>& q);
-    std::array<double, 6>  cartesianWrench(const std::array<double, 7>& q,
-                                            const std::array<double, 7>& tau_ext);
-    GMOInputs              computeGMOInputs(const std::array<double, 7>& q,
-                                            const std::array<double, 7>& dq);
+    std::array<double, 6>  cartesianWrench(const std::array<double, 7>& q, const std::array<double, 7>& tau_ext);
+    GMOInputs computeGMOInputs(const std::array<double, 7>& q, const std::array<double, 7>& dq);
+    Matrix4 forwardKinematics(const Vector7& q);
 
 private:
     pinocchio::Model pin_model_;

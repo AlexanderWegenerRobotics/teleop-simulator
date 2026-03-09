@@ -81,7 +81,7 @@ void Robot::control(std::function<Torques(const RobotState&, Duration)> control_
         std::cout << "You need to set the simulator first" << std::endl;
         return;
     }
-
+    sim->setDeviceActive(name_, true);
     bRunning = true;
     while (bRunning) {
         if (!sim->isRunning()) {
@@ -113,4 +113,5 @@ void Robot::control(std::function<Torques(const RobotState&, Duration)> control_
             std::this_thread::sleep_until(next_control_time);
         }
     }
+    sim->setDeviceActive(name_, false);
 }

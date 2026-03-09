@@ -1,5 +1,6 @@
 #include "arm_control.hpp"
 #include "common.hpp"
+#include "interpolator.hpp"
 #include "sim_env/model.hpp"
 #include <chrono>
 #include <iostream>
@@ -13,8 +14,8 @@ ArmControl::ArmControl(const YAML::Node& device_config)
         .control_freq   = 1000,
         .comm_freq      = device_config["transmission"]["frequency"].as<int>(),
         .n_dof          = 7,
-        .max_linear_vel = 0.1,
-        .max_angular_vel = 0.5
+        .max_linear_vel = 0.5,
+        .max_angular_vel = 0.8
     })
 {
     name_ = device_config["name"].as<std::string>();
@@ -31,6 +32,10 @@ ArmControl::ArmControl(const YAML::Node& device_config)
 
     auto q0_vec = device_config["q0"].as<std::vector<double>>();
     q0_ = Eigen::Map<const Vector7>(q0_vec.data());
+    auto tau_max_vec_ = device_config["max_torque"].as<std::vector<double>>();
+    tau_max_ = Eigen::Map<const Vector7>(tau_max_vec_.data());
+    auto tau_rate_max_vec_ = device_config["max_torque_rate"].as<std::vector<double>>();
+    tau_rate_max_ = Eigen::Map<const Vector7>(tau_rate_max_vec_.data()) / 1000.0;
 
     if (device_config["transmission"]) {
         TransmissionConfig tx_config{
@@ -97,21 +102,19 @@ void ArmControl::runStateHandler(){
                 std::lock_guard<std::mutex> lock(state_mtx);
                 q_current = Eigen::Map<const Vector7>(current_state.q.data());
             }
-            interpolator_.planJoint(q_current, q0_);
+            interpolator_.planJoint(q_current, q0_, ProfileType::MINJERK);
         }
         else if (state_ == SysState::ENGAGED) {
-            Eigen::Isometry3d T_cmd = Eigen::Isometry3d::Identity();
-
             if (has_cmd) {
+                Eigen::Isometry3d T_cmd = Eigen::Isometry3d::Identity();
                 Eigen::Vector3d pos(cmd.position[0], cmd.position[1], cmd.position[2]);
                 Eigen::Quaterniond q(cmd.quaternion[0], cmd.quaternion[1],cmd.quaternion[2], cmd.quaternion[3]);
                 T_cmd.translation() = pos;
                 T_cmd.linear() = q.toRotationMatrix();
+                Eigen::Isometry3d T_target = transformCommandToBase(T_cmd);
+                interpolator_.planCartesian(interpolator_.getCurrentCartesian(), T_target, ProfileType::LINEAR);
                 has_cmd = false;
             }
-
-            Eigen::Isometry3d T_target = transformCommandToBase(T_cmd);
-            interpolator_.planCartesian(interpolator_.getCurrentCartesian(), T_target);
         }
 
         // send state back
@@ -193,28 +196,36 @@ void ArmControl::updateStateMachine(SysState cmd_state){
 }
 
 void ArmControl::runControlHandler(){
+    Vector7 tau_prev_ = Vector7::Zero();
+
     std::function<franka::Torques(const franka::RobotState&, franka::Duration)>
         control_callback = [&](const franka::RobotState& robot_state, franka::Duration) -> franka::Torques {
             
-            Vector7 ctrl_torque = Vector7::Zero();
             interpolator_.step();
             {
                 std::lock_guard<std::mutex> lock(state_mtx);
                 current_state = robot_state;
             }
-
+            Vector7 ctrl_torque = Vector7::Zero();
             switch(state_){
                 case SysState::HOMING:
                     ctrl_torque = jointImpedanceControl(robot_state);
                     break;
 
+                case SysState::AWAITING:
                 case SysState::ENGAGED:
                     ctrl_torque = cartesianImpedanceControl(robot_state);
                     break;
 
                 default:
-                    ctrl_torque = jointImpedanceControl(robot_state);
+                    //ctrl_torque = jointImpedanceControl(robot_state);
+                    break;
             }
+
+            // rate limit & torque limit
+            ctrl_torque = tau_prev_ + (ctrl_torque - tau_prev_).cwiseMax(-tau_rate_max_).cwiseMin(tau_rate_max_);
+            ctrl_torque = ctrl_torque.cwiseMax(-tau_max_).cwiseMin(tau_max_);
+            tau_prev_ = ctrl_torque;
 
             if (logger_) {
                 double t = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - startTime_).count();
@@ -222,8 +233,9 @@ void ArmControl::runControlHandler(){
                 Matrix4 T_target = Matrix4::Identity();
                 if(state_ == SysState::HOMING){
                     q_target = interpolator_.getCurrentJoint();
+                    T_target = model->forwardKinematics(q_target);
                 }
-                else if(state_ == SysState::ENGAGED){
+                else if(state_ == SysState::ENGAGED || state_ == SysState::AWAITING){
                     Eigen::Isometry3d T_ee_target = interpolator_.getCurrentCartesian();
                     T_target = T_ee_target.matrix();
                 }
@@ -277,10 +289,8 @@ Vector7 ArmControl::jointImpedanceControl(const franka::RobotState& rs) {
 Vector7 ArmControl::cartesianImpedanceControl(const franka::RobotState& rs) {
     Eigen::Map<const Vector7> q(rs.q.data());
     Eigen::Map<const Vector7> dq(rs.dq.data());
-
     Eigen::Isometry3d T_ee(Eigen::Map<const Eigen::Matrix4d>(rs.O_T_EE.data()));
 
-    // position and orientation error
     Eigen::Isometry3d T_ee_target = interpolator_.getCurrentCartesian();
     Eigen::Vector3d pos_error = T_ee_target.translation() - T_ee.translation();
     Eigen::Matrix3d R_error   = T_ee_target.rotation() * T_ee.rotation().transpose();
@@ -290,29 +300,28 @@ Vector7 ArmControl::cartesianImpedanceControl(const franka::RobotState& rs) {
     Eigen::Matrix<double, 6, 1> error;
     error << pos_error, ori_error;
 
-    // jacobian
     auto J_array = model->zeroJacobian(rs.q);
     Matrix6x7 J  = Eigen::Map<Matrix6x7>(J_array.data());
 
-    // ee velocity
     Eigen::Matrix<double, 6, 1> ee_vel = J * dq;
 
-    // cartesian impedance
     Eigen::Matrix<double, 6, 1> F = kp_cart_.cwiseProduct(error) - kd_cart_.cwiseProduct(ee_vel);
     Vector7 tau_task = J.transpose() * F;
 
-    // mass matrix and coriolis
     auto mass_array = model->mass(rs.q);
     Matrix7 M = Eigen::Map<Matrix7>(mass_array.data());
 
     auto coriolis_array = model->coriolis(rs.q, rs.dq);
     Vector7 tau_coriolis = Eigen::Map<Vector7>(coriolis_array.data());
 
-    // null space control — keep joints close to q0_
-    Eigen::Matrix<double, 7, 6> J_pinv = M.inverse() * J.transpose() *
-        (J * M.inverse() * J.transpose()).inverse();
+    // dynamically consistent pseudoinverse via LDLT — no explicit M inversion
+    Eigen::LDLT<Matrix7> M_ldlt(M);
+    Eigen::Matrix<double, 7, 7> M_inv = M_ldlt.solve(Matrix7::Identity());
 
-    Eigen::Matrix<double, 7, 7> N = Eigen::Matrix<double, 7, 7>::Identity() - J_pinv * J;
+    Eigen::Matrix<double, 6, 6> JMinvJt = J * M_inv * J.transpose();
+    Eigen::Matrix<double, 7, 6> J_pinv  = M_inv * J.transpose() * JMinvJt.ldlt().solve(Eigen::Matrix<double, 6, 6>::Identity());
+
+    Eigen::Matrix<double, 7, 7> N = Matrix7::Identity() - J_pinv * J;
 
     Vector7 tau_null = N * (kp_null_.cwiseProduct(q0_ - q) - kd_null_.cwiseProduct(dq));
 
@@ -334,6 +343,7 @@ bool ArmControl::isHome() {
 
     if (position_reached && velocity_settled) {
         T_origin_ = T_ee;
+        std::cout << q.transpose() << std::endl;
         return true;
     }
     return false;

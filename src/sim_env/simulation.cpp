@@ -107,6 +107,17 @@ void Simulation::run_model() {
             std::lock_guard<std::mutex> lock(data_mtx);
             {
                 std::lock_guard<std::mutex> ctrl_lock(ctrl_mtx_);
+
+                for (const auto& [name, active] : active_devices_) {
+                    if (active) continue;
+                    const auto& act_ids  = actuator_ids_[name];
+                    const auto& jnt_ids  = joint_ids_[name];
+                    for (size_t i = 0; i < act_ids.size() && i < jnt_ids.size(); ++i) {
+                        int vadr = model->jnt_dofadr[jnt_ids[i]];
+                        ctrl_buffer_[act_ids[i]] = data->qfrc_bias[vadr];
+                    }
+                }
+
                 for (int i = 0; i < model->nu; ++i)
                     data->ctrl[i] = ctrl_buffer_[i];
             }
@@ -373,6 +384,7 @@ void Simulation::buildActuatorIndex() {
         actuator_ids_[dev.name] = std::move(jointActuators);
         gripper_ids_[dev.name]  = gripperId;
         joint_ids_[dev.name]    = std::move(joints);
+        active_devices_[dev.name] = false;
     }
 }
 
@@ -416,4 +428,8 @@ DeviceState Simulation::getDeviceState(const std::string& deviceName) {
     }
 
     return state;
+}
+
+void Simulation::setDeviceActive(const std::string& deviceName, bool state){
+    active_devices_[deviceName] = state;
 }

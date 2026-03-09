@@ -60,6 +60,8 @@ private:
     Eigen::Quaterniond base_orientation_;
     Eigen::Isometry3d T_base_;
     Vector7 q0_;
+    Vector7 tau_max_;
+    Vector7 tau_rate_max_;
     std::mutex state_mtx;
     franka::RobotState current_state;
     Eigen::Isometry3d T_origin_;

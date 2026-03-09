@@ -121,3 +121,11 @@ GMOInputs Model::computeGMOInputs(const std::array<double, 7>& q,
 
     return { pin_data_.M * dq_eig, pin_data_.C * dq_eig + pin_data_.g };
 }
+
+Matrix4 Model::forwardKinematics(const Vector7& q) {
+    pinocchio::forwardKinematics(pin_model_, pin_data_, q);
+    pinocchio::updateFramePlacements(pin_model_, pin_data_);
+
+    const pinocchio::SE3& T = pin_data_.oMf[pin_model_.getFrameId(ee_frame_name_)];
+    return T.toHomogeneousMatrix();
+}

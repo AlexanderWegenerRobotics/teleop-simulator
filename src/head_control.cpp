@@ -167,6 +167,7 @@ void HeadControl::updateStateMachine(SysState cmd_state){
 
 void HeadControl::runControlHandler() {
     Vector2 tau_prev_ = Vector2::Zero();
+    bool bInitDone = false;
 
     franka_joint_driver::Driver::CallbackFunctionTorque torque_control_callback =
         [&](const std::vector<Driver::State>& driver_state,
@@ -178,6 +179,11 @@ void HeadControl::runControlHandler() {
             for (size_t i = 0; i < 2; ++i) {
                 q(i)     = driver_state[i].theta;
                 tau_j(i) = driver_state[i].tau_j;
+            }
+
+            if (!bInitDone) {
+                interpolator_.planJoint(q, q, ProfileType::TRAPEZOIDAL);
+                bInitDone = true;
             }
 
             auto now = std::chrono::high_resolution_clock::now();
