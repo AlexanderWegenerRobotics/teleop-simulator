@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <Eigen/Dense>
+#include <yaml-cpp/yaml.h>
 
 enum class SysState : uint8_t {
     OFFLINE  = 0,  // not initialized / not connected
@@ -74,3 +75,10 @@ struct AvatarStateMsg {
 };
 
 #pragma pack(pop)
+
+
+template<int N>
+Eigen::Matrix<double, N, 1> yamlToVector(const YAML::Node& node) {
+    auto vec = node.as<std::vector<double>>();
+    return Eigen::Map<const Eigen::Matrix<double, N, 1>>(vec.data());
+}

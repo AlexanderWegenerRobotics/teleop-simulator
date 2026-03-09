@@ -30,12 +30,15 @@ ArmControl::ArmControl(const YAML::Node& device_config)
     T_base_.translation() = base_position_;
     T_base_.linear()      = base_orientation_.toRotationMatrix();
 
-    auto q0_vec = device_config["q0"].as<std::vector<double>>();
-    q0_ = Eigen::Map<const Vector7>(q0_vec.data());
-    auto tau_max_vec_ = device_config["max_torque"].as<std::vector<double>>();
-    tau_max_ = Eigen::Map<const Vector7>(tau_max_vec_.data());
-    auto tau_rate_max_vec_ = device_config["max_torque_rate"].as<std::vector<double>>();
-    tau_rate_max_ = Eigen::Map<const Vector7>(tau_rate_max_vec_.data()) / 1000.0;
+    q0_ = yamlToVector<7>(device_config["q0"]);
+    tau_max_ = yamlToVector<7>(device_config["max_torque"]);
+    tau_rate_max_ = yamlToVector<7>(device_config["max_torque_rate"]) / 1000.0;
+    kp_joint_ = yamlToVector<7>(device_config["control"]["kp_joint"]);
+    kd_joint_ = yamlToVector<7>(device_config["control"]["kd_joint"]);
+    kp_cart_ = yamlToVector<6>(device_config["control"]["kp_cart"]);
+    kd_cart_ = yamlToVector<6>(device_config["control"]["kd_cart"]);
+    kp_null_ = yamlToVector<7>(device_config["control"]["kp_null"]);
+    kd_null_ = yamlToVector<7>(device_config["control"]["kd_null"]);
 
     if (device_config["transmission"]) {
         TransmissionConfig tx_config{
@@ -338,12 +341,11 @@ bool ArmControl::isHome() {
         T_ee = Eigen::Isometry3d(Eigen::Map<const Eigen::Matrix4d>(current_state.O_T_EE.data()));
     }
 
-    bool position_reached = (q0_ - q).cwiseAbs().maxCoeff() < 0.3;
+    bool position_reached = (q0_ - q).cwiseAbs().maxCoeff() < 0.1;
     bool velocity_settled = dq.cwiseAbs().maxCoeff() < 0.01;
 
     if (position_reached && velocity_settled) {
         T_origin_ = T_ee;
-        std::cout << q.transpose() << std::endl;
         return true;
     }
     return false;

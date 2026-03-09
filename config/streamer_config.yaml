@@ -1,4 +1,4 @@
-enabled: false
+enabled: true
 
 host: "10.112.24.173"
 port: 5004
@@ -9,6 +9,6 @@ fec_percentage: 10
 shm_name: "/avatar_cam"
 
 stream_camera: "head_head_cam"
-stream_fps: 30
+fps: 30
 stream_width: 1280
 stream_height: 720

@@ -67,11 +67,7 @@ private:
     Eigen::Isometry3d T_origin_;
 
 private:
-    Vector7 kp_joint_{(Vector7() << 800, 800, 800, 800, 400, 200, 80).finished()};
-    Vector7 kd_joint_{(Vector7() << 40,   40,  40,  40,  20,  10,  5).finished()};
-
-    Eigen::Matrix<double, 6, 1> kp_cart_{(Eigen::Matrix<double, 6, 1>() << 800, 800, 800, 50, 50, 50).finished()};
-    Eigen::Matrix<double, 6, 1> kd_cart_{(Eigen::Matrix<double, 6, 1>() <<  40,  40,  40, 10, 10, 10).finished()};
-    Vector7 kp_null_{(Vector7() << 10, 10, 10, 10, 5, 3, 1).finished()};
-    Vector7 kd_null_{(Vector7() <<  1,  1,  1,  1, 1, 1, 1).finished()};
+    Vector7 kp_joint_, kd_joint_;
+    Eigen::Matrix<double, 6, 1> kp_cart_, kd_cart_;
+    Vector7 kp_null_, kd_null_;
 };

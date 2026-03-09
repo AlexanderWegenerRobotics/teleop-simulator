@@ -19,13 +19,11 @@ HeadControl::HeadControl(const YAML::Node& device_config)
 {
     name_ = device_config["name"].as<std::string>();
 
-    auto q0_vec = device_config["q0"].as<std::vector<double>>();
-    q0_ = Eigen::Map<const Vector2>(q0_vec.data());
-
-    auto tau_max_vec = device_config["max_torque"].as<std::vector<double>>();
-    tau_max_ = Eigen::Map<const Vector2>(tau_max_vec.data());
-    auto tau_rate_max_vec_ = device_config["max_torque_rate"].as<std::vector<double>>();
-    tau_rate_max_ = Eigen::Map<const Vector2>(tau_rate_max_vec_.data());
+    q0_ = yamlToVector<2>(device_config["q0"]);
+    tau_max_ = yamlToVector<2>(device_config["max_torque"]);
+    tau_rate_max_ = yamlToVector<2>(device_config["max_torque_rate"]) / 1000.0;
+    kp_ = yamlToVector<2>(device_config["control"]["kp_joint"]);
+    kd_ = yamlToVector<2>(device_config["control"]["kd_joint"]);
 
     if (device_config["transmission"]) {
         TransmissionConfig tx_config{

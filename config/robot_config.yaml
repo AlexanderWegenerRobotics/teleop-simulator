@@ -9,44 +9,64 @@ devices:
   - name: arm_left
     type: arm
     enabled: True
+    transmission:
+      remote_ip: "127.0.0.1"
+      send_port: 8001
+      receive_port: 7001
+      frequency: 200
+    
     base_pose:
       position: [0, 0.6, 0.8]
       orientation: [0.5, -0.5,  0.5, -0.5]
     q0: [0.0, -0.785398, 0.0, -2.356194, 0.0, 1.570796, 0.785398]
     max_torque: [87, 87, 87, 87, 12, 12, 12]
     max_torque_rate: [1000, 1000, 1000, 1000, 1000, 1000, 1000]
-    transmission:
-      remote_ip: "127.0.0.1"
-      send_port: 8001
-      receive_port: 7001
-      frequency: 200
+    control:
+      kp_joint: [600, 600, 600, 600, 250, 150, 50]
+      kd_joint: [50,  50,  50,  50,  30,  25,  15]
+      kp_cart: [400, 400, 400, 30,  30,  30]
+      kd_cart: [40,  40,  40,  5,   5,   5]
+      kp_null: [10,  10,  10,  10,  5,   5,   5]
+      kd_null:  [1,   1,   1,   1,   1,   1,   1]
 
   - name: arm_right
     type: arm
     enabled: True
+    transmission:
+      remote_ip: "127.0.0.1"
+      send_port: 8002
+      receive_port: 7002
+      frequency: 200
+    
     base_pose:
       position: [0, -0.6, 0.8]
       orientation: [0.5, 0.5, 0.5, 0.5]
     q0: [0.0, -0.785398, 0.0, -2.356194, 0.0, 1.570796, 0.785398]
     max_torque: [87, 87, 87, 87, 12, 12, 12]
     max_torque_rate: [1000, 1000, 1000, 1000, 1000, 1000, 1000]
-    transmission:
-      remote_ip: "127.0.0.1"
-      send_port: 8002
-      receive_port: 7002
-      frequency: 200
+    control:
+      kp_joint: [600, 600, 600, 600, 250, 150, 50]
+      kd_joint: [50,  50,  50,  50,  30,  25,  15]
+      kp_cart: [400, 400, 400, 30,  30,  30]
+      kd_cart: [40,  40,  40,  5,   5,   5]
+      kp_null: [10,  10,  10,  10,  5,   5,   5]
+      kd_null: [1,   1,   1,   1,   1,   1,   1]
 
   - name: head
     type: head
     enabled: True
+    transmission:
+      remote_ip: "127.0.0.1"
+      send_port: 8003
+      receive_port: 7003
+      frequency: 200
+
     base_pose:
       position: [0, 0, 1.2]
       orientation: [1, 0, 0, 0]
     q0: [0.0, -0.4]
     max_torque: [20, 20]
     max_torque_rate: [1000, 1000]
-    transmission:
-      remote_ip: "127.0.0.1"
-      send_port: 8003
-      receive_port: 7003
-      frequency: 200
+    control:
+      kp_joint: [50, 50]
+      kd_joint: [5, 5]
