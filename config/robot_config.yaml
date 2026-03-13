@@ -1,6 +1,6 @@
 avatar:
   transmission:
-    remote_ip: "127.0.0.1"
+    remote_ip: "10.112.24.173"
     send_port: 8000
     receive_port: 7000
     frequency: 20
@@ -10,7 +10,7 @@ devices:
     type: arm
     enabled: True
     transmission:
-      remote_ip: "127.0.0.1"
+      remote_ip: "10.112.24.173"
       send_port: 8001
       receive_port: 7001
       frequency: 200
@@ -33,7 +33,7 @@ devices:
     type: arm
     enabled: True
     transmission:
-      remote_ip: "127.0.0.1"
+      remote_ip: "10.112.24.173"
       send_port: 8002
       receive_port: 7002
       frequency: 200
@@ -56,7 +56,7 @@ devices:
     type: head
     enabled: True
     transmission:
-      remote_ip: "127.0.0.1"
+      remote_ip: "10.112.24.173"
       send_port: 8003
       receive_port: 7003
       frequency: 200
