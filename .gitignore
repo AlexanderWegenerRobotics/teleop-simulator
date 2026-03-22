@@ -9,6 +9,8 @@ cmake_install.cmake
 .cache/
 **/.cache/
 
+.vs/
+
 log/
 
 # Compiled objects

@@ -1,0 +1,11 @@
+{
+  "name": "avatar",
+  "version": "0.1.0",
+  "dependencies": [
+    "tinyxml2",
+    "yaml-cpp",
+    "eigen3",
+    "poco",
+    "glfw3"
+  ]
+}
