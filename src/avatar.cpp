@@ -73,6 +73,7 @@ void Avatar::start(){
         if (transmission_ && transmission_->hasNewCommand()) {
             AvatarCommandMsg cmd = transmission_->getAvatarCommand();
             cmd_state = cmd.requested_state;
+            std::cout << "Receving for avatar" << std::endl;
         }
 
         updateStateMachine(cmd_state);

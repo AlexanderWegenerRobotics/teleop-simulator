@@ -317,7 +317,6 @@ Vector7 ArmControl::cartesianImpedanceControl(const franka::RobotState& rs) {
     auto coriolis_array = model->coriolis(rs.q, rs.dq);
     Vector7 tau_coriolis = Eigen::Map<Vector7>(coriolis_array.data());
 
-    // dynamically consistent pseudoinverse via LDLT — no explicit M inversion
     Eigen::LDLT<Matrix7> M_ldlt(M);
     Eigen::Matrix<double, 7, 7> M_inv = M_ldlt.solve(Matrix7::Identity());
 
@@ -352,10 +351,9 @@ bool ArmControl::isHome() {
 }
 
 Eigen::Isometry3d ArmControl::transformCommandToBase(const Eigen::Isometry3d& T_cmd_world) const {
-    Eigen::Isometry3d T_target = T_origin_;
-
-    T_target.translation() += T_base_.rotation().transpose() * T_cmd_world.translation();
-    T_target.linear() = T_cmd_world.rotation() * T_origin_.rotation();
-
+    Eigen::Matrix3d R_w2b = T_base_.rotation().transpose();
+    Eigen::Isometry3d T_target = Eigen::Isometry3d::Identity();
+    T_target.translation() = T_origin_.translation() + R_w2b * T_cmd_world.translation();
+    T_target.linear() = (R_w2b * T_cmd_world.rotation() * R_w2b.transpose()) * T_origin_.rotation();
     return T_target;
 }

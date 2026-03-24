@@ -15,6 +15,7 @@ import threading
 # ── Config ────────────────────────────────────────────────────────────────────
 
 AVATAR_IP   = "10.112.24.173"
+#AVATAR_IP = "127.0.0.1"
 
 # Avatar
 AVATAR_SEND_PORT    = 7000   # script sends to avatar's receive_port
