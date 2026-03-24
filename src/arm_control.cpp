@@ -41,14 +41,12 @@ ArmControl::ArmControl(const YAML::Node& device_config)
     kd_null_ = yamlToVector<7>(device_config["control"]["kd_null"]);
 
     if (device_config["transmission"]) {
-        TransmissionConfig tx_config{
-            .remote_ip    = device_config["transmission"]["remote_ip"].as<std::string>(),
-            .send_port    = device_config["transmission"]["send_port"].as<int>(),
-            .receive_port = device_config["transmission"]["receive_port"].as<int>(),
-            .frequency    = device_config["transmission"]["frequency"].as<int>(),
-            .role         = TransmissionRole::ARM
-        };
-        transmission_ = std::make_unique<Transmission>(tx_config);
+        UdpStreamConfig stream_cfg;
+        stream_cfg.transport.remote_ip   = device_config["transmission"]["remote_ip"].as<std::string>();
+        stream_cfg.transport.remote_port = device_config["transmission"]["send_port"].as<int>();
+        stream_cfg.transport.bind_port   = device_config["transmission"]["receive_port"].as<int>();
+        stream_cfg.send_rate_hz          = device_config["transmission"]["frequency"].as<int>();
+        transmission_ = std::make_unique<ArmStream>(stream_cfg);
     }
     logger_ = std::make_unique<DataLogger<ArmLogEntry>>("../log/" + name_ + "_log.csv", armLogHeader, armLogRow);
 }
@@ -93,8 +91,8 @@ void ArmControl::runStateHandler(){
 
     while(bRunning){
 
-        if (transmission_ && transmission_->hasNewCommand()) {
-            cmd = transmission_->getArmCommand();
+        if (transmission_ && transmission_->hasNew()) {
+            cmd = transmission_->getRecvData();
             has_cmd = true;
         }
 
@@ -122,7 +120,6 @@ void ArmControl::runStateHandler(){
 
         // send state back
         if (transmission_) {
-            ArmStateMsg state_msg{};
             franka::RobotState rs;
             {
                 std::lock_guard<std::mutex> lock(state_mtx);
@@ -131,7 +128,7 @@ void ArmControl::runStateHandler(){
             Eigen::Isometry3d T_ee(Eigen::Map<const Eigen::Matrix4d>(rs.O_T_EE.data()));
             Eigen::Quaterniond q_ee(T_ee.rotation());
 
-            state_msg.state       = state_;
+            ArmStateMsg state_msg{};
             state_msg.position[0] = static_cast<float>(T_ee.translation().x());
             state_msg.position[1] = static_cast<float>(T_ee.translation().y());
             state_msg.position[2] = static_cast<float>(T_ee.translation().z());
@@ -139,8 +136,7 @@ void ArmControl::runStateHandler(){
             state_msg.quaternion[1] = static_cast<float>(q_ee.x());
             state_msg.quaternion[2] = static_cast<float>(q_ee.y());
             state_msg.quaternion[3] = static_cast<float>(q_ee.z());
-
-            transmission_->sendArmState(state_msg);
+            transmission_->setSendData(state_msg);
         }
 
         prev_state = state_;
@@ -150,6 +146,7 @@ void ArmControl::runStateHandler(){
 }
 
 void ArmControl::updateStateMachine(SysState cmd_state){
+    SysState prev = state_;
     if(cmd_state == SysState::STOP){
         state_ = SysState::STOP;
     }
@@ -195,6 +192,9 @@ void ArmControl::updateStateMachine(SysState cmd_state){
 
         default:
             break;
+    }
+    if (state_ != prev && transmission_) {
+        transmission_->setState(state_);
     }
 }
 

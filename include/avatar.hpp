@@ -3,7 +3,7 @@
 
 #include "arm_control.hpp"
 #include "head_control.hpp"
-#include "transmission.hpp"
+#include "network/udp_reliable.hpp"
 #include "sim_env/simulation.hpp"
 
 class Avatar{
@@ -29,7 +29,8 @@ private:
 private:
     std::vector<ArmControl*> arm_instances;
 	std::vector<HeadControl*> head_instances;
-    std::unique_ptr<Transmission> transmission_;
+    std::unique_ptr<UdpReliable> cmd_channel_;
+    std::atomic<SysState> cmd_requested_{SysState::IDLE};
 
     std::shared_ptr<Simulation> sim_ = nullptr;
     std::atomic<bool> bRunning;

@@ -13,6 +13,14 @@ enum class SysState : uint8_t {
     PAUSED   = 5,  // holding current pose, operator temporarily disengaged
     FAULT    = 6,  // error state, safe torques only
     STOP     = 7,
+    UNDEFINED   = 255
+};
+
+enum class DeviceId : uint8_t {
+    LEFT_ARM  = 1,
+    RIGHT_ARM = 2,
+    HEAD      = 3,
+    AVATAR    = 4
 };
 
 enum class TransmissionRole : uint8_t {
@@ -21,6 +29,26 @@ enum class TransmissionRole : uint8_t {
     AVATAR = 2
 };
 
+enum class FaultCode : uint8_t {
+    NONE                = 0,
+    JOINT_LIMIT         = 1,
+    JOINT_LOCKED        = 2,
+    HIGH_EXTERNAL_FORCE = 3,
+    VELOCITY_LIMIT      = 4,
+    IMPLAUSIBLE_COMMAND = 5,
+    COMM_LOSS           = 6,
+    INTERNAL_ERROR      = 7,
+    HMD_NOT_WORN        = 8,
+    COLLISION_RISK      = 9,
+    WORKSPACE_LIMIT     = 10
+};
+
+inline uint64_t timestamp_ns() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+}
+
+
 using Matrix6x7 = Eigen::Matrix<double, 6, 7>;
 using Matrix7   = Eigen::Matrix<double, 7, 7>;
 using Matrix4   = Eigen::Matrix<double, 4, 4>;
@@ -28,52 +56,42 @@ using Vector7   = Eigen::Matrix<double, 7, 1>;
 using Vector2   = Eigen::Matrix<double, 2, 1>;
 
 #pragma pack(push, 1)
-
+ 
+struct MsgHeader {
+    uint32_t sequence;
+    uint64_t timestamp_ns;
+    SysState state;
+    FaultCode fault_code;
+    DeviceId device_id;
+};
+ 
 struct ArmCommandMsg {
-    uint8_t  device_id;
-    SysState state;
-    float    position[3];
-    float    quaternion[4];
-    float    gripper;
-    uint64_t timestamp_ns;
+    MsgHeader header;
+    float position[3];
+    float quaternion[4];
+    float gripper;
 };
-
+ 
 struct ArmStateMsg {
-    uint8_t  device_id;
-    SysState state;
-    float    position[3];
-    float    quaternion[4];
-    float    tau_ext[7];
-    uint64_t timestamp_ns;
+    MsgHeader header;
+    float position[3];
+    float quaternion[4];
+    float joint_positions[7];
+    float tau_ext[7];
 };
-
+ 
 struct HeadCommandMsg {
-    uint8_t  device_id;
-    SysState state;
-    float    pan;
-    float    tilt;
-    uint64_t timestamp_ns;
+    MsgHeader header;
+    float pan;
+    float tilt;
 };
-
+ 
 struct HeadStateMsg {
-    uint8_t  device_id;
-    SysState state;
-    float    pan;
-    float    tilt;
-    uint64_t timestamp_ns;
+    MsgHeader header;
+    float pan;
+    float tilt;
 };
-
-struct AvatarCommandMsg {
-    SysState requested_state;
-    uint8_t  session_id;
-    uint64_t timestamp_ns;
-};
-
-struct AvatarStateMsg {
-    SysState system_state;
-    uint64_t timestamp_ns;
-};
-
+ 
 #pragma pack(pop)
 
 

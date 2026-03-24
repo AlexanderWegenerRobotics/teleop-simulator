@@ -26,14 +26,12 @@ HeadControl::HeadControl(const YAML::Node& device_config)
     kd_ = yamlToVector<2>(device_config["control"]["kd_joint"]);
 
     if (device_config["transmission"]) {
-        TransmissionConfig tx_config{
-            .remote_ip    = device_config["transmission"]["remote_ip"].as<std::string>(),
-            .send_port    = device_config["transmission"]["send_port"].as<int>(),
-            .receive_port = device_config["transmission"]["receive_port"].as<int>(),
-            .frequency    = device_config["transmission"]["frequency"].as<int>(),
-            .role = TransmissionRole::HEAD
-        };
-        transmission_ = std::make_unique<Transmission>(tx_config);
+        UdpStreamConfig stream_cfg;
+        stream_cfg.transport.remote_ip   = device_config["transmission"]["remote_ip"].as<std::string>();
+        stream_cfg.transport.remote_port = device_config["transmission"]["send_port"].as<int>();
+        stream_cfg.transport.bind_port   = device_config["transmission"]["receive_port"].as<int>();
+        stream_cfg.send_rate_hz          = device_config["transmission"]["frequency"].as<int>();
+        transmission_ = std::make_unique<HeadStream>(stream_cfg);
     }
     logger_ = std::make_unique<DataLogger<HeadLogEntry>>("../log/" + name_ + "_log.csv", headLogHeader, headLogRow);
 }
@@ -75,8 +73,8 @@ void HeadControl::runStateHandler(){
 
     while(bRunning){
 
-        if (transmission_ && transmission_->hasNewCommand()) {
-            cmd = transmission_->getHeadCommand();
+        if (transmission_ && transmission_->hasNew()) {
+            cmd = transmission_->getRecvData();
             has_cmd = true;
         }
 
@@ -101,17 +99,17 @@ void HeadControl::runStateHandler(){
         }
 
         if (transmission_) {
-            HeadStateMsg state_msg{};
             Vector2 q, dq;
             {
                 std::lock_guard<std::mutex> lock(state_mtx);
                 q  = current_state.q;
                 dq = current_state.dq;
             }
-            state_msg.state = state_;
+
+            HeadStateMsg state_msg{};
             state_msg.pan   = static_cast<float>(q(0));
             state_msg.tilt  = static_cast<float>(q(1));
-            transmission_->sendHeadState(state_msg);
+            transmission_->setSendData(state_msg);
         }
 
         prev_state = state_;
@@ -121,6 +119,7 @@ void HeadControl::runStateHandler(){
 }
 
 void HeadControl::updateStateMachine(SysState cmd_state){
+    SysState prev = state_;
     if(cmd_state == SysState::STOP){
         state_ = SysState::STOP;
     }
@@ -165,6 +164,9 @@ void HeadControl::updateStateMachine(SysState cmd_state){
 
         default:
             break;
+    }
+    if (state_ != prev && transmission_) {
+        transmission_->setState(state_);
     }
 }
 

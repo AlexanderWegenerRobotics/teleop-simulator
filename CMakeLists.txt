@@ -16,6 +16,7 @@ find_package(yaml-cpp REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Poco REQUIRED COMPONENTS Net Foundation)
 find_package(PkgConfig REQUIRED)
+find_package(msgpack-cxx REQUIRED)
 
 if(BUILD_WITH_MUJOCO)
     find_package(tinyxml2 REQUIRED)
@@ -48,7 +49,8 @@ set(SOURCES
     src/arm_control.cpp
     src/head_control.cpp
     src/interpolator.cpp
-    src/transmission.cpp
+    src/network/udp_transport.cpp
+    src/network/udp_reliable.cpp
 )
 
 if(BUILD_WITH_MUJOCO)
@@ -85,6 +87,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     glfw
     Poco::Net
     Poco::Foundation
+    msgpack-cxx
 )
 
 if(BUILD_WITH_MUJOCO)

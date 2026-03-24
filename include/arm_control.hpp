@@ -10,7 +10,7 @@
 #include "sim_env/robot.hpp"
 #include "sim_env/gripper.hpp"
 #include "interpolator.hpp"
-#include "transmission.hpp"
+#include "network/udp_stream.hpp"
 #include "data_logger.hpp"
 #include "common.hpp"
 
@@ -41,7 +41,8 @@ private:
     std::atomic<SysState> state_{SysState::OFFLINE};
     std::atomic<SysState> cmd_state_{SysState::OFFLINE};
     Interpolator interpolator_;
-    std::unique_ptr<Transmission> transmission_;
+    using ArmStream = UdpStream<ArmCommandMsg, ArmStateMsg>;
+    std::unique_ptr<ArmStream> transmission_;
     std::unique_ptr<DataLogger<ArmLogEntry>> logger_;
     std::chrono::high_resolution_clock::time_point startTime_;
     

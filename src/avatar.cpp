@@ -1,5 +1,6 @@
 #include "avatar.hpp"
 #include "common.hpp"
+#include "network/udp_reliable.hpp"
 
 #include <iostream>
 
@@ -18,14 +19,21 @@ Avatar::Avatar(const YAML::Node& config) {
     }
 
     if (sys_config["avatar"]["transmission"]) {
-        TransmissionConfig tx_config{
-            .remote_ip    = sys_config["avatar"]["transmission"]["remote_ip"].as<std::string>(),
-            .send_port    = sys_config["avatar"]["transmission"]["send_port"].as<int>(),
-            .receive_port = sys_config["avatar"]["transmission"]["receive_port"].as<int>(),
-            .frequency    = sys_config["avatar"]["transmission"]["frequency"].as<int>(),
-            .role         = TransmissionRole::AVATAR
-        };
-        transmission_ = std::make_unique<Transmission>(tx_config);
+        UdpReliableConfig cmd_cfg;
+        cmd_cfg.transport.remote_ip   = sys_config["avatar"]["transmission"]["remote_ip"].as<std::string>();
+        cmd_cfg.transport.remote_port = sys_config["avatar"]["transmission"]["send_port"].as<int>();
+        cmd_cfg.transport.bind_port   = sys_config["avatar"]["transmission"]["receive_port"].as<int>();
+        cmd_cfg.poll_rate_hz          = sys_config["avatar"]["transmission"]["frequency"].as<int>();
+        cmd_channel_ = std::make_unique<UdpReliable>(cmd_cfg);
+
+        cmd_channel_->registerHandler("state_change",[this](const ReliableEnvelope& env, const msgpack::object& payload) {
+            std::map<std::string, msgpack::object> fields;
+            payload.convert(fields);
+            auto it = fields.find("requested_state");
+            if (it != fields.end()) {
+                cmd_requested_.store(static_cast<SysState>(it->second.as<uint8_t>()));
+            }
+        });
     }
 
 #ifndef WITH_FRANKA
@@ -52,7 +60,7 @@ Avatar::~Avatar(){
 }
 
 void Avatar::start(){
-    if (transmission_) transmission_->start();
+    if (cmd_channel_) cmd_channel_->start();
     for(const auto& head : head_instances){
         head->start();
     }
@@ -65,25 +73,33 @@ void Avatar::start(){
 	auto next_control_time = std::chrono::high_resolution_clock::now();
 
     SysState cmd_state = SysState::IDLE;
+    SysState prev_state = SysState::IDLE;
     state_ = SysState::IDLE;
-
+    if (cmd_channel_) cmd_channel_->setState(SysState::IDLE);
+    auto last_heartbeat = std::chrono::steady_clock::now();
+    auto start_time = std::chrono::steady_clock::now();
     bRunning = true;
+   
     while(bRunning){
-
-        if (transmission_ && transmission_->hasNewCommand()) {
-            AvatarCommandMsg cmd = transmission_->getAvatarCommand();
-            cmd_state = cmd.requested_state;
-            std::cout << "Receving for avatar" << std::endl;
-        }
-
+        SysState cmd_state = cmd_requested_.load();
         updateStateMachine(cmd_state);
 
-        AvatarStateMsg state_msg{};
-        state_msg.system_state = getState();
-        if (transmission_) transmission_->sendAvatarState(state_msg);
+        if (state_ != prev_state && cmd_channel_) {
+            cmd_channel_->setState(state_);
+        }
+        prev_state = state_;
+
+        // heartbeat
+        auto now = std::chrono::steady_clock::now();
+        if (cmd_channel_ && std::chrono::duration_cast<std::chrono::milliseconds>(now - last_heartbeat).count() >= 500) {
+            msgpack::sbuffer buf;
+            msgpack::pack(buf, std::map<std::string, int64_t>{{"uptime_ms", std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count()}});
+            cmd_channel_->send("heartbeat", buf, false);
+            last_heartbeat = now;
+        }
 
         next_control_time += control_period;
-		std::this_thread::sleep_until(next_control_time);
+        std::this_thread::sleep_until(next_control_time);
     }
 }
 
@@ -94,8 +110,7 @@ void Avatar::stop(){
     for(const auto& arm : arm_instances){
         arm->stop();
     }
-    if (transmission_) transmission_->stop();
-
+    if (cmd_channel_) cmd_channel_->stop();
     bRunning = false;
 }
 

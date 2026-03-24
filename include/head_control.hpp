@@ -7,7 +7,7 @@
 
 #include "sim_env/tum_head_driver.hpp"
 #include "interpolator.hpp"
-#include "transmission.hpp"
+#include "network/udp_stream.hpp"
 #include "data_logger.hpp"
 #include "common.hpp"
 
@@ -37,7 +37,8 @@ public:
 public:
     std::unique_ptr<franka_joint_driver::Driver> module;
     Interpolator interpolator_;
-    std::unique_ptr<Transmission> transmission_;
+    using HeadStream = UdpStream<HeadCommandMsg, HeadStateMsg>;
+    std::unique_ptr<HeadStream> transmission_;
     std::unique_ptr<DataLogger<HeadLogEntry>> logger_;
     std::chrono::high_resolution_clock::time_point startTime_;
 
