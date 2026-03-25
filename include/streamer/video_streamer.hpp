@@ -19,14 +19,14 @@ struct StreamerConfig {
     int         bitrate_kbps;
     int         fec_percentage;
     std::string shm_name;
+    std::string source_type;
+    std::string realsense_serial;
+    int         stream_width;
+    int         stream_height;
 };
 
 class VideoStreamer {
 public:
-    /// Number of bytes in the timestamp row (RGB: width * 3).
-    /// First 8 bytes carry a uint64 wall-clock nanosecond timestamp,
-    /// rest is zero-filled.  The row is appended as the last row of
-    /// the frame so the encoder treats it as normal pixel data.
     static constexpr size_t kTimestampBytes = 8;
 
     VideoStreamer(const StreamerConfig& config);

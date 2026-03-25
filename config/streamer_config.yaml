@@ -1,14 +1,20 @@
 enabled: true
-
 host: "10.112.24.173"
 port: 5004
 feedback_port: 5005
 timestamp_port: 5006
 bitrate_kbps: 2000
 fec_percentage: 10
-shm_name: "/avatar_cam"
-
-stream_camera: "head_head_cam"
 fps: 30
-stream_width: 1280
-stream_height: 720
+stream_width: 640
+stream_height: 480
+
+# source_type: "mujoco" | "realsense"
+source_type: "realsense"
+
+# mujoco source
+shm_name: "/avatar_cam"
+stream_camera: "head_head_cam"
+
+# realsense source (serial is optional — leave empty to use first available device)
+realsense_serial: "151422255086"

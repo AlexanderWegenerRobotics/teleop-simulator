@@ -1,4 +1,5 @@
 #include "streamer/video_streamer.hpp"
+#include "streamer/realsense_source.hpp"
 
 #include <stdexcept>
 #include <iostream>
@@ -11,8 +12,18 @@ VideoStreamer::VideoStreamer(const StreamerConfig& config)
     : config_(config)
 {
     gst_init(nullptr, nullptr);
-    source_ = std::make_unique<MuJoCoSource>(config.shm_name, config.fps);
-    target_fps_.store(config.fps);
+
+    if (config_.source_type == "realsense") {
+        source_ = std::make_unique<RealSenseSource>(
+            config_.realsense_serial,
+            config_.stream_width,
+            config_.stream_height,
+            config_.fps);
+    } else {
+        source_ = std::make_unique<MuJoCoSource>(config_.shm_name, config_.fps);
+    }
+
+    target_fps_.store(config_.fps);
 }
 
 VideoStreamer::~VideoStreamer() {

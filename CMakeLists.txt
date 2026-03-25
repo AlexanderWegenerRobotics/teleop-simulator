@@ -17,6 +17,7 @@ find_package(Eigen3 REQUIRED)
 find_package(Poco REQUIRED COMPONENTS Net Foundation)
 find_package(PkgConfig REQUIRED)
 find_package(msgpack-cxx REQUIRED)
+find_package(realsense2 REQUIRED)
 
 if(BUILD_WITH_MUJOCO)
     find_package(tinyxml2 REQUIRED)
@@ -112,6 +113,7 @@ if(BUILD_STREAMER)
         src/streamer/video_streamer.cpp
         src/streamer/camera_source.cpp
         src/streamer/stream_quality_controller.cpp
+        src/streamer/realsense_source.cpp
     )
 
     target_include_directories(avatar_streamer PRIVATE
@@ -122,6 +124,7 @@ if(BUILD_STREAMER)
     target_link_libraries(avatar_streamer PRIVATE
         yaml-cpp::yaml-cpp
         ${GST_LIBRARIES}
+        realsense2::realsense2
     )
 
     target_link_directories(avatar_streamer PRIVATE
