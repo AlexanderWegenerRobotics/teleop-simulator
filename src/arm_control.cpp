@@ -39,6 +39,7 @@ ArmControl::ArmControl(const YAML::Node& device_config)
     kd_cart_ = yamlToVector<6>(device_config["control"]["kd_cart"]);
     kp_null_ = yamlToVector<7>(device_config["control"]["kp_null"]);
     kd_null_ = yamlToVector<7>(device_config["control"]["kd_null"]);
+    motion_scale_ = device_config["control"]["motion_scale"].as<double>();
 
     if (device_config["transmission"]) {
         UdpStreamConfig stream_cfg;
@@ -88,6 +89,7 @@ void ArmControl::runStateHandler(){
     Eigen::VectorXd q_current = Eigen::VectorXd::Zero(7);
     bool has_cmd = false;
     ArmCommandMsg cmd;
+    Eigen::Quaterniond prev_cmd_quat_ = Eigen::Quaterniond::Identity();
 
     while(bRunning){
 
@@ -109,7 +111,10 @@ void ArmControl::runStateHandler(){
             if (has_cmd) {
                 Eigen::Isometry3d T_cmd = Eigen::Isometry3d::Identity();
                 Eigen::Vector3d pos(cmd.position[0], cmd.position[1], cmd.position[2]);
-                Eigen::Quaterniond q(cmd.quaternion[0], cmd.quaternion[1],cmd.quaternion[2], cmd.quaternion[3]);
+                Eigen::Quaterniond q(cmd.quaternion[0], cmd.quaternion[1], cmd.quaternion[2], cmd.quaternion[3]);
+                q.normalize();
+                if (q.dot(prev_cmd_quat_) < 0.0) q.coeffs() *= -1.0;
+                prev_cmd_quat_ = q;
                 T_cmd.translation() = pos;
                 T_cmd.linear() = q.toRotationMatrix();
                 Eigen::Isometry3d T_target = transformCommandToBase(T_cmd);
@@ -296,9 +301,16 @@ Vector7 ArmControl::cartesianImpedanceControl(const franka::RobotState& rs) {
 
     Eigen::Isometry3d T_ee_target = interpolator_.getCurrentCartesian();
     Eigen::Vector3d pos_error = T_ee_target.translation() - T_ee.translation();
-    Eigen::Matrix3d R_error   = T_ee_target.rotation() * T_ee.rotation().transpose();
-    Eigen::AngleAxisd aa(R_error);
-    Eigen::Vector3d ori_error = aa.angle() * aa.axis();
+    
+    //Eigen::Matrix3d R_error   = T_ee_target.rotation() * T_ee.rotation().transpose();
+    //Eigen::AngleAxisd aa(R_error);
+    //Eigen::Vector3d ori_error = aa.angle() * aa.axis();
+
+    Eigen::Quaterniond q_target(T_ee_target.rotation());
+    Eigen::Quaterniond q_current(T_ee.rotation());
+    if (q_target.dot(q_current) < 0.0) q_target.coeffs() *= -1.0;
+    Eigen::Quaterniond q_error = q_target * q_current.inverse();
+    Eigen::Vector3d ori_error(q_error.x(), q_error.y(), q_error.z());
 
     Eigen::Matrix<double, 6, 1> error;
     error << pos_error, ori_error;
@@ -350,10 +362,22 @@ bool ArmControl::isHome() {
     return false;
 }
 
+/* 
+Eigen::Isometry3d ArmControl::transformCommandToBase(const Eigen::Isometry3d& T_cmd_world) const {
+    Eigen::Matrix3d R_w2b = T_base_.rotation().transpose();
+    Eigen::AngleAxisd aa(T_cmd_world.rotation());
+    Eigen::Matrix3d R_scaled = Eigen::AngleAxisd(aa.angle() * rotation_scale_, aa.axis()).toRotationMatrix();
+    Eigen::Isometry3d T_target = Eigen::Isometry3d::Identity();
+    T_target.translation() = T_origin_.translation() + R_w2b * T_cmd_world.translation() * motion_scale_;
+    T_target.linear() = (R_w2b * R_scaled * R_w2b.transpose()) * T_origin_.rotation();
+    return T_target;
+}
+*/
+
 Eigen::Isometry3d ArmControl::transformCommandToBase(const Eigen::Isometry3d& T_cmd_world) const {
     Eigen::Matrix3d R_w2b = T_base_.rotation().transpose();
     Eigen::Isometry3d T_target = Eigen::Isometry3d::Identity();
-    T_target.translation() = T_origin_.translation() + R_w2b * T_cmd_world.translation();
+    T_target.translation() = T_origin_.translation() + R_w2b * T_cmd_world.translation() * motion_scale_;
     T_target.linear() = (R_w2b * T_cmd_world.rotation() * R_w2b.transpose()) * T_origin_.rotation();
     return T_target;
 }

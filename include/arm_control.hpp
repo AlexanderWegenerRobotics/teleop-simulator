@@ -71,4 +71,6 @@ private:
     Vector7 kp_joint_, kd_joint_;
     Eigen::Matrix<double, 6, 1> kp_cart_, kd_cart_;
     Vector7 kp_null_, kd_null_;
+    double motion_scale_ = 3.0;
+    double rotation_scale_ = 1.0;
 };

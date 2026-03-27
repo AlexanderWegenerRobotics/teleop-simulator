@@ -29,6 +29,7 @@ devices:
       kd_cart: [40,  40,  40,  5,   5,   5]
       kp_null: [10,  10,  10,  10,  5,   5,   5]
       kd_null:  [1,   1,   1,   1,   1,   1,   1]
+      motion_scale: 3.0
 
   - name: arm_right
     type: arm
@@ -55,6 +56,7 @@ devices:
       kd_cart: [40,  40,  40,  12,   12,   12]
       kp_null: [10,  10,  10,  10,  5,   5,   5]
       kd_null: [1,   1,   1,   1,   1,   1,   1]
+      motion_scale: 3.0
 
   - name: head
     type: head
