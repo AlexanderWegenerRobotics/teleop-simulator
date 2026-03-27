@@ -48,8 +48,12 @@ Avatar::Avatar(const YAML::Node& config) {
     for (const auto& rd : sys_config["devices"])
         robot_devs[rd["name"].as<std::string>()] = YAML::Node(rd);
 
-    for (auto& arm : arm_instances)
+    for (auto& arm : arm_instances) {
         arm->robot->set_simulation(*sim_, sim_devs[arm->getDeviceName()], robot_devs[arm->getDeviceName()]);
+        std::string gripper_name = "hand_" + arm->getDeviceName().substr(arm->getDeviceName().find('_') + 1);
+        if (sim_devs.count(gripper_name))
+            arm->gripper->set_simulation(*sim_, gripper_name);
+    }
     for (auto& head : head_instances)
         head->module->set_simulation(*sim_, sim_devs[head->getDeviceName()]);
 #endif

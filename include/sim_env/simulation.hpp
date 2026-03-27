@@ -32,6 +32,7 @@ public:
     bool isRunning() const;
     void setCtrl(const std::string& deviceName, const std::vector<double>& values);
     void setGripper(const std::string& deviceName, double value);
+    double getGripperWidth(const std::string& deviceName);
     DeviceState getDeviceState(const std::string& deviceName);
     void setDeviceActive(const std::string& deviceName, bool state);
 

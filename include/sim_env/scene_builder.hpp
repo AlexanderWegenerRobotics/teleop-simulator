@@ -22,6 +22,9 @@ struct DeviceConfig {
     std::array<double, 4>  orientation;
     std::vector<double>    q0;
     std::string            gripper_actuator;
+    std::string            attach_to;
+    std::array<double, 3>  attach_offset_pos;
+    std::array<double, 4>  attach_offset_quat;
 };
 
 struct ObjectConfig {

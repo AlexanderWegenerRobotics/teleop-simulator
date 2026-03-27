@@ -6,15 +6,25 @@
 #include <pinocchio/algorithm/rnea.hpp>
 #include <pinocchio/algorithm/kinematics.hpp>
 #include <pinocchio/algorithm/frames.hpp>
+#include <pinocchio/algorithm/model.hpp>
 
 using namespace franka;
 
 Model::Model(const std::string& urdf_path, const std::array<double, 4>& base_quat, const std::string& ee_frame_name)
     : ee_frame_name_(ee_frame_name)
 {
-    pinocchio::urdf::buildModel(urdf_path, pin_model_);
+    pinocchio::Model full_model;
+    pinocchio::urdf::buildModel(urdf_path, full_model);
 
-    // rotate world gravity into base frame
+    std::vector<pinocchio::JointIndex> joints_to_lock;
+    for (const std::string& name : {"fr3_finger_joint1", "fr3_finger_joint2"}) {
+        if (full_model.existJointName(name))
+            joints_to_lock.push_back(full_model.getJointId(name));
+    }
+
+    Eigen::VectorXd q_ref = Eigen::VectorXd::Zero(full_model.nq);
+    pin_model_ = pinocchio::buildReducedModel(full_model, joints_to_lock, q_ref);
+
     Eigen::Quaterniond q(base_quat[0], base_quat[1], base_quat[2], base_quat[3]);
     Eigen::Vector3d g_base = q.toRotationMatrix().transpose() * Eigen::Vector3d(0, 0, -9.81);
     pin_model_.gravity.linear(g_base);

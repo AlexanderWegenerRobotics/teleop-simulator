@@ -76,6 +76,19 @@ static void normalizeMeshNames(XMLElement* assetEl) {
     }
 }
 
+static XMLElement* findBodyByName(XMLElement* el, const std::string& name) {
+    if (!el) return nullptr;
+    if (std::string(el->Name()) == "body") {
+        const char* n = el->Attribute("name");
+        if (n && std::string(n) == name) return el;
+    }
+    for (XMLElement* ch = el->FirstChildElement(); ch; ch = ch->NextSiblingElement()) {
+        XMLElement* found = findBodyByName(ch, name);
+        if (found) return found;
+    }
+    return nullptr;
+}
+
 static void absoluteMeshPaths(XMLElement* assetEl, const std::string& meshdir) {
     for (XMLElement* el = assetEl->FirstChildElement("mesh");
          el; el = el->NextSiblingElement("mesh")) {
@@ -98,6 +111,9 @@ static void injectModel(const std::string& modelPath,
                         const std::string& namePrefix,
                         const std::array<double, 3>& pos,
                         const std::array<double, 4>& quat,
+                        const std::string& attach_to,
+                        const std::array<double, 3>& attach_offset_pos,
+                        const std::array<double, 4>& attach_offset_quat,
                         XMLDocument& scene,
                         XMLElement*  compilerEl,
                         XMLElement*  assetEl,
@@ -132,15 +148,34 @@ static void injectModel(const std::string& modelPath,
         frame->SetAttribute("name", (namePrefix + "_frame").c_str());
 
         char posBuf[64], quatBuf[80];
-        std::snprintf(posBuf,  sizeof(posBuf),  "%.6g %.6g %.6g",
-                      pos[0], pos[1], pos[2]);
-        std::snprintf(quatBuf, sizeof(quatBuf), "%.6g %.6g %.6g %.6g",
-                      quat[0], quat[1], quat[2], quat[3]);
+
+        if (!attach_to.empty()) {
+            std::snprintf(posBuf,  sizeof(posBuf),  "%.6g %.6g %.6g",
+                          attach_offset_pos[0], attach_offset_pos[1], attach_offset_pos[2]);
+            std::snprintf(quatBuf, sizeof(quatBuf), "%.6g %.6g %.6g %.6g",
+                          attach_offset_quat[0], attach_offset_quat[1],
+                          attach_offset_quat[2], attach_offset_quat[3]);
+        } else {
+            std::snprintf(posBuf,  sizeof(posBuf),  "%.6g %.6g %.6g",
+                          pos[0], pos[1], pos[2]);
+            std::snprintf(quatBuf, sizeof(quatBuf), "%.6g %.6g %.6g %.6g",
+                          quat[0], quat[1], quat[2], quat[3]);
+        }
+
         frame->SetAttribute("pos",  posBuf);
         frame->SetAttribute("quat", quatBuf);
 
         deepCopyChildren(frame, scene, rw);
-        worldbody->InsertEndChild(frame);
+
+        if (!attach_to.empty()) {
+            XMLElement* parent = findBodyByName(worldbody, attach_to);
+            if (!parent)
+                throw std::runtime_error(
+                    "injectModel: attach_to body '" + attach_to + "' not found in scene");
+            parent->InsertEndChild(frame);
+        } else {
+            worldbody->InsertEndChild(frame);
+        }
     }
 
     for (const char* tag : {"actuator", "tendon", "equality", "contact"})
@@ -184,8 +219,7 @@ BuiltScene SceneBuilder::build(const YAML::Node& sim_config, const YAML::Node& r
 // YAML parsing
 // ===========================================================================
 
-std::vector<DeviceConfig> SceneBuilder::parseDevices(const YAML::Node& sim_config,
-                                                      const YAML::Node& robot_config) {
+std::vector<DeviceConfig> SceneBuilder::parseDevices(const YAML::Node& sim_config, const YAML::Node& robot_config) {
     std::unordered_map<std::string, YAML::Node> sim_devs;
     if (sim_config["devices"])
         for (const auto& sd : sim_config["devices"])
@@ -214,6 +248,17 @@ std::vector<DeviceConfig> SceneBuilder::parseDevices(const YAML::Node& sim_confi
         dev.model_path       = sd["model_path"].as<std::string>();
         dev.root_body        = sd["root_body"].as<std::string>();
         dev.gripper_actuator = sd["gripper_actuator"] ? sd["gripper_actuator"].as<std::string>() : "";
+        dev.attach_to = sd["attach_to"] ? sd["attach_to"].as<std::string>() : "";
+
+        if (sd["attach_offset"]) {
+            auto p = sd["attach_offset"]["position"];
+            dev.attach_offset_pos = {p[0].as<double>(), p[1].as<double>(), p[2].as<double>()};
+            auto o = sd["attach_offset"]["orientation"];
+            dev.attach_offset_quat = {o[0].as<double>(), o[1].as<double>(),o[2].as<double>(), o[3].as<double>()};
+        } else {
+            dev.attach_offset_pos  = {0, 0, 0};
+            dev.attach_offset_quat = {1, 0, 0, 0};
+        }
 
         auto pos = rd["base_pose"]["position"];
         dev.position = {pos[0].as<double>(), pos[1].as<double>(), pos[2].as<double>()};
@@ -374,11 +419,13 @@ std::string SceneBuilder::buildSceneXML(const std::vector<DeviceConfig>& devices
     for (const auto& dev : devices)
         injectModel(dev.model_path, dev.name,
                     dev.position, dev.orientation,
+                    dev.attach_to, dev.attach_offset_pos, dev.attach_offset_quat,
                     scene, compilerEl, assetEl, worldbody, root);
 
     for (const auto& obj : objects)
         injectModel(obj.model_path, obj.name,
                     obj.position, obj.orientation,
+                    "", {0,0,0}, {1,0,0,0},
                     scene, compilerEl, assetEl, worldbody, root);
 
     for (const auto& cam : cameras) {

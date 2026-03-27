@@ -338,17 +338,35 @@ void Simulation::setCtrl(const std::string& deviceName,
         ctrl_buffer_[ids[i]] = values[i];
 }
 
-void Simulation::setGripper(const std::string& deviceName, double value) {
+void Simulation::setGripper(const std::string& deviceName, double width) {
     auto it = gripper_ids_.find(deviceName);
     if (it == gripper_ids_.end() || it->second < 0) {
         std::cerr << "[Simulation] setGripper: device '" << deviceName
                   << "' has no gripper actuator defined\n";
         return;
     }
+
+    double half_width  = std::clamp(width, 0.0, 0.08) / 2.0;
+    double ctrl_value  = half_width / 0.01568627451;
+
     std::lock_guard<std::mutex> lock(ctrl_mtx_);
-    ctrl_buffer_[it->second] = value;
+    ctrl_buffer_[it->second] = ctrl_value;
 }
 
+double Simulation::getGripperWidth(const std::string& deviceName) {
+    auto it = joint_ids_.find(deviceName);
+    if (it == joint_ids_.end() || it->second.empty()) return 0.0;
+
+    int r        = snap_read_.load(std::memory_order_acquire);
+    mjData* snap = snap_[r];
+
+    double total = 0.0;
+    for (int j : it->second) {
+        int qadr = model->jnt_qposadr[j];
+        total   += snap->qpos[qadr];
+    }
+    return total;
+}
 
 // ---------------------------------------------------------------------------
 // Actuator index tables
