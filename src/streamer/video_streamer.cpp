@@ -41,6 +41,9 @@ void VideoStreamer::start() {
     qc_config.bitrate_normal = config_.bitrate_kbps;
     qc_config.fps_normal     = config_.fps;
     qc_config.fec_normal     = config_.fec_percentage;
+    qc_config.status_host        = config_.host;
+    qc_config.status_port        = config_.status_port;
+    qc_config.status_interval_ms = config_.status_interval_ms;
 
     quality_ = std::make_unique<StreamQualityController>(qc_config);
     quality_->setOnQualityChange([this](const StreamQualityParams& params) {

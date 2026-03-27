@@ -3,6 +3,8 @@ host: "10.112.24.173"
 port: 5004
 feedback_port: 5005
 timestamp_port: 5006
+status_port: 5007
+status_interval_ms: 500
 bitrate_kbps: 2000
 fec_percentage: 10
 fps: 30

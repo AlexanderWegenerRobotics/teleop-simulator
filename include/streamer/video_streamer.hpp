@@ -15,6 +15,8 @@ struct StreamerConfig {
     std::string host;
     int         port;
     int         feedback_port;
+    int         status_port;
+    int         status_interval_ms;
     int         fps;
     int         bitrate_kbps;
     int         fec_percentage;

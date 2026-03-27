@@ -79,47 +79,91 @@ StreamQualityParams StreamQualityController::paramsForState(StreamState state) c
 }
 
 void StreamQualityController::run() {
-    int fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (fd < 0) {
+    int recv_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (recv_fd < 0) {
         std::cerr << "[QualityController] socket creation failed" << std::endl;
         return;
     }
 
-    int flags = fcntl(fd, F_GETFL, 0);
-    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    int flags = fcntl(recv_fd, F_GETFL, 0);
+    fcntl(recv_fd, F_SETFL, flags | O_NONBLOCK);
 
     sockaddr_in addr{};
     addr.sin_family      = AF_INET;
     addr.sin_port        = htons(config_.listen_port);
     addr.sin_addr.s_addr = inet_addr(config_.listen_ip.c_str());
 
-    if (bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
+    if (bind(recv_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
         std::cerr << "[QualityController] bind failed on port " << config_.listen_port << std::endl;
-        close(fd);
+        close(recv_fd);
+        return;
+    }
+
+    int send_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (send_fd < 0) {
+        std::cerr << "[QualityController] send socket creation failed" << std::endl;
+        close(recv_fd);
+        return;
+    }
+
+    sockaddr_in dest{};
+    dest.sin_family      = AF_INET;
+    dest.sin_port        = htons(config_.status_port);
+    dest.sin_addr.s_addr = inet_addr(config_.status_host.c_str());
+
+    if (connect(send_fd, reinterpret_cast<sockaddr*>(&dest), sizeof(dest)) < 0) {
+        std::cerr << "[QualityController] connect failed for status destination" << std::endl;
+        close(recv_fd);
+        close(send_fd);
         return;
     }
 
     std::cout << "[QualityController] listening on " << config_.listen_ip
               << ":" << config_.listen_port << std::endl;
+    std::cout << "[QualityController] status heartbeat → "
+              << config_.status_host << ":" << config_.status_port << std::endl;
+
+    last_heartbeat_time_ = std::chrono::steady_clock::now();
 
     while (bRunning_) {
         struct pollfd pfd{};
-        pfd.fd     = fd;
+        pfd.fd     = recv_fd;
         pfd.events = POLLIN;
 
         int ret = poll(&pfd, 1, 100);
         if (ret > 0 && (pfd.revents & POLLIN)) {
             StreamFeedbackMsg report{};
-            ssize_t n = recv(fd, &report, sizeof(report), 0);
+            ssize_t n = recv(recv_fd, &report, sizeof(report), 0);
             if (n == sizeof(StreamFeedbackMsg)) {
                 processReport(report);
             }
         }
 
         updateState();
+
+        auto now     = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now - last_heartbeat_time_).count();
+
+        if (elapsed >= config_.status_interval_ms) {
+            sendStatusHeartbeat(send_fd);
+            last_heartbeat_time_ = now;
+        }
     }
 
-    close(fd);
+    close(recv_fd);
+    close(send_fd);
+}
+
+void StreamQualityController::sendStatusHeartbeat(int fd) {
+    StreamStatusMsg msg{};
+    msg.magic        = kStreamStatusMagic;
+    msg.state        = static_cast<uint8_t>(getState());
+    msg.timestamp_ns = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+
+    send(fd, &msg, sizeof(msg), 0);
 }
 
 void StreamQualityController::processReport(const StreamFeedbackMsg& report) {

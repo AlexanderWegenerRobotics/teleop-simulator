@@ -29,17 +29,19 @@ int main(int argc, char** argv) {
     }
 
     StreamerConfig config{
-        .host              = cfg["host"].as<std::string>(),
-        .port              = cfg["port"].as<int>(),
-        .feedback_port     = cfg["feedback_port"].as<int>(5005),
-        .fps               = cfg["fps"].as<int>(),
-        .bitrate_kbps      = cfg["bitrate_kbps"].as<int>(),
-        .fec_percentage    = cfg["fec_percentage"].as<int>(),
-        .shm_name          = cfg["shm_name"].as<std::string>(""),
-        .source_type       = cfg["source_type"].as<std::string>("mujoco"),
-        .realsense_serial  = cfg["realsense_serial"].as<std::string>(""),
-        .stream_width      = cfg["stream_width"].as<int>(640),
-        .stream_height     = cfg["stream_height"].as<int>(480),
+        .host               = cfg["host"].as<std::string>(),
+        .port               = cfg["port"].as<int>(),
+        .feedback_port      = cfg["feedback_port"].as<int>(5005),
+        .status_port        = cfg["status_port"].as<int>(5007),
+        .status_interval_ms = cfg["status_interval_ms"].as<int>(500),
+        .fps                = cfg["fps"].as<int>(),
+        .bitrate_kbps       = cfg["bitrate_kbps"].as<int>(),
+        .fec_percentage     = cfg["fec_percentage"].as<int>(),
+        .shm_name           = cfg["shm_name"].as<std::string>(""),
+        .source_type        = cfg["source_type"].as<std::string>("mujoco"),
+        .realsense_serial   = cfg["realsense_serial"].as<std::string>(""),
+        .stream_width       = cfg["stream_width"].as<int>(640),
+        .stream_height      = cfg["stream_height"].as<int>(480),
     };
 
     std::signal(SIGINT,  onSignal);
