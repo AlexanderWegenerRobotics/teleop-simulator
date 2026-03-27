@@ -10,7 +10,7 @@ stream_width: 640
 stream_height: 480
 
 # source_type: "mujoco" | "realsense"
-source_type: "realsense"
+source_type: "mujoco"
 
 # mujoco source
 shm_name: "/avatar_cam"
