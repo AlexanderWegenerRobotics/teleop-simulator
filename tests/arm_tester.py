@@ -132,15 +132,14 @@ def send_heartbeat(sock, current_state, uptime_ms):
 
 # ── Arm struct helpers ────────────────────────────────────────────────────────
 
-def send_arm_cmd(sock, send_port, device_id, state, position, quaternion):
+def send_arm_cmd(sock, send_port, device_id, state, position, quaternion, gripper):
     w, x, y, z = quaternion
     px, py, pz = position
-    # header: seq=0, ts, state, fault=0, device_id
     msg = struct.pack(ARM_CMD_FMT,
         0, _now_ns(), state, 0, device_id,
         px, py, pz,
         w, x, y, z,
-        0.0)
+        gripper)
     sock.sendto(msg, (AVATAR_IP, send_port))
 
 def parse_arm_state(data):
@@ -171,6 +170,9 @@ class AppState:
 
         self.pos   = [0.0, 0.0, 0.0]
         self.quat  = (1.0, 0.0, 0.0, 0.0)
+
+        self.gripper     = 0.0
+        self.step_gripper = 0.1
 
         self.step_pos  = 0.01
         self.step_ang  = math.radians(2.0)
@@ -232,12 +234,13 @@ def arm_cmd_thread(arm_left_sock, arm_right_sock, app):
             quat     = app.quat
             target   = app.target_arm
             req      = app.requested_state
+            gripper  = app.gripper
 
         if av_state == SysState.ENGAGED:
             if target in (1, 3):
-                send_arm_cmd(arm_left_sock,  ARM_LEFT_SEND_PORT,  0, SysState.ENGAGED, pos, quat)
+                send_arm_cmd(arm_left_sock,  ARM_LEFT_SEND_PORT,  0, SysState.ENGAGED, pos, quat, gripper)
             if target in (2, 3):
-                send_arm_cmd(arm_right_sock, ARM_RIGHT_SEND_PORT, 1, SysState.ENGAGED, pos, quat)
+                send_arm_cmd(arm_right_sock, ARM_RIGHT_SEND_PORT, 1, SysState.ENGAGED, pos, quat, gripper)
 
         elapsed = time.time() - t0
         remaining = period - elapsed
@@ -251,6 +254,7 @@ HELP = [
     "ARM:   1=left  2=right   3=both",
     "MOVE:  w/s=+/-X  a/d=+/-Y  q/e=+/-Z",
     "ROT:   I/K=+/-Rx  J/L=+/-Ry  U/O=+/-Rz  (shift)",
+    "GRIP:  f=open  v=close  (step: gripper_step)",
     "       +/-=step   r=reset pose   ESC=quit",
 ]
 
@@ -288,6 +292,7 @@ def draw(stdscr, app):
 
     put(f"  Left  arm    : {al_str:10}  EE={al_pos}")
     put(f"  Right arm    : {ar_str:10}  EE={ar_pos}")
+    put(f"  Gripper      : {app.gripper:.2f}  (f=open, v=close)")
     put("")
     put(f"  Target arm   : {'LEFT' if tgt==1 else 'RIGHT' if tgt==2 else 'BOTH'}")
     put(f"  Cmd pos      : ({pos[0]:+.4f}, {pos[1]:+.4f}, {pos[2]:+.4f})")
@@ -361,6 +366,16 @@ def run_tui(stdscr, app, avatar_sock):
         elif ch == 'x':
             send_state_change(avatar_sock, SysState.STOP, av)
             app.log("→ STOP requested")
+        
+        elif ch == 'f':
+            with app.lock:
+                app.gripper = max(0.0, app.gripper - app.step_gripper)
+            app.log(f"Gripper → {app.gripper:.2f}")
+
+        elif ch == 'v':
+            with app.lock:
+                app.gripper = min(1.0, app.gripper + app.step_gripper)
+            app.log(f"Gripper → {app.gripper:.2f}")
 
         elif ch == '1':
             with app.lock:

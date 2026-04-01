@@ -306,10 +306,6 @@ Vector7 ArmControl::cartesianImpedanceControl(const franka::RobotState& rs) {
     Eigen::Isometry3d T_ee_target = interpolator_.getCurrentCartesian();
     Eigen::Vector3d pos_error = T_ee_target.translation() - T_ee.translation();
     
-    //Eigen::Matrix3d R_error   = T_ee_target.rotation() * T_ee.rotation().transpose();
-    //Eigen::AngleAxisd aa(R_error);
-    //Eigen::Vector3d ori_error = aa.angle() * aa.axis();
-
     Eigen::Quaterniond q_target(T_ee_target.rotation());
     Eigen::Quaterniond q_current(T_ee.rotation());
     if (q_target.dot(q_current) < 0.0) q_target.coeffs() *= -1.0;
@@ -365,18 +361,6 @@ bool ArmControl::isHome() {
     }
     return false;
 }
-
-/* 
-Eigen::Isometry3d ArmControl::transformCommandToBase(const Eigen::Isometry3d& T_cmd_world) const {
-    Eigen::Matrix3d R_w2b = T_base_.rotation().transpose();
-    Eigen::AngleAxisd aa(T_cmd_world.rotation());
-    Eigen::Matrix3d R_scaled = Eigen::AngleAxisd(aa.angle() * rotation_scale_, aa.axis()).toRotationMatrix();
-    Eigen::Isometry3d T_target = Eigen::Isometry3d::Identity();
-    T_target.translation() = T_origin_.translation() + R_w2b * T_cmd_world.translation() * motion_scale_;
-    T_target.linear() = (R_w2b * R_scaled * R_w2b.transpose()) * T_origin_.rotation();
-    return T_target;
-}
-*/
 
 Eigen::Isometry3d ArmControl::transformCommandToBase(const Eigen::Isometry3d& T_cmd_world) const {
     Eigen::Matrix3d R_w2b = T_base_.rotation().transpose();

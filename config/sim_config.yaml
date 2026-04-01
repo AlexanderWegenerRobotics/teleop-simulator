@@ -18,6 +18,7 @@ devices:
   - name: hand_left
     model_path: "../models/mujoco/robots/franka_fr3/hand.xml"
     root_body: "hand"
+    gripper_actuator: "actuator8"
     attach_to: "arm_left_fr3_link7"
     attach_offset:
       position: [0, 0, 0.107]
@@ -33,6 +34,7 @@ devices:
   - name: hand_right
     model_path: "../models/mujoco/robots/franka_fr3/hand.xml"
     root_body: "hand"
+    gripper_actuator: "actuator8"
     attach_to: "arm_right_fr3_link7"
     attach_offset:
       position: [0, 0, 0.107]

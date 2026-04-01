@@ -14,6 +14,7 @@ Gripper::~Gripper() {}
 void Gripper::set_simulation(Simulation& sim, const std::string& device_name) {
     sim_  = &sim;
     name_ = device_name;
+    activate();
 }
 
 double Gripper::currentWidth() {
@@ -27,9 +28,7 @@ void Gripper::commandWidth(double width) {
     sim_->setGripper(name_, clamped);
 }
 
-bool Gripper::moveToWidth(double target_width, double speed,
-                           double epsilon_inner, double epsilon_outer,
-                           bool check_grasp) {
+bool Gripper::moveToWidth(double target_width, double speed, double epsilon_inner, double epsilon_outer, bool check_grasp) {
     bStop_.store(false);
 
     double clamped = std::clamp(target_width, 0.0, kMaxWidth);
@@ -53,14 +52,11 @@ bool Gripper::moveToWidth(double target_width, double speed,
             if (within_outer) return true;
         }
 
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - start).count();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
         if (elapsed > kMoveTimeoutMs) return false;
 
-        std::this_thread::sleep_for(
-            std::chrono::milliseconds(static_cast<int>(kPollIntervalMs)));
+        std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(kPollIntervalMs)));
     }
-
     return false;
 }
 
@@ -92,6 +88,10 @@ GripperState Gripper::readOnce() {
     state.width      = currentWidth();
     state.is_grasped = false;
     return state;
+}
+
+void Gripper::activate() {
+    if (sim_) sim_->setDeviceActive(name_, true);
 }
 
 }

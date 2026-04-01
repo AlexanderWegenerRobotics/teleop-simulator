@@ -201,14 +201,12 @@ BuiltScene SceneBuilder::build(const YAML::Node& sim_config, const YAML::Node& r
 
     std::string xml = buildSceneXML(result.devices, result.objects, result.cameras, baseScenePath);
 
-    result.xml_path =
-        std::filesystem::path(baseScenePath).parent_path() / "_generated_scene.xml";
+    result.xml_path = std::filesystem::path(baseScenePath).parent_path() / "_generated_scene.xml";
 
     {
         std::ofstream out(result.xml_path);
         if (!out.is_open())
-            throw std::runtime_error("Cannot write generated scene: " +
-                                     result.xml_path.string());
+            throw std::runtime_error("Cannot write generated scene: " + result.xml_path.string());
         out << xml;
     }
     return result;

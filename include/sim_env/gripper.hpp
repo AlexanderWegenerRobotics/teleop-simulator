@@ -32,11 +32,10 @@ public:
     GripperState readOnce();
 
 private:
-    bool moveToWidth(double target_width, double speed,
-                     double epsilon_inner, double epsilon_outer,
-                     bool check_grasp);
+    bool moveToWidth(double target_width, double speed, double epsilon_inner, double epsilon_outer, bool check_grasp);
     double currentWidth();
     void   commandWidth(double width);
+    void activate();
 
     static constexpr double kMaxWidth        = 0.08;
     static constexpr double kCtrlGain        = 0.01568627451;
