@@ -102,6 +102,14 @@ void Avatar::start(){
             cmd_channel_->send("heartbeat", buf, false);
             last_heartbeat = now;
         }
+        #ifndef WITH_FRANKA
+            for (auto& arm : arm_instances) {
+                Eigen::Isometry3d T = arm->getTargetPose();
+                std::string dev = arm->getDeviceName();
+                std::string side = dev.substr(dev.find('_') + 1);
+                sim_->setFramePose("target_" + side + "_frame", T.translation(), Eigen::Quaterniond(T.rotation()));
+            }
+        #endif
 
         next_control_time += control_period;
         std::this_thread::sleep_until(next_control_time);

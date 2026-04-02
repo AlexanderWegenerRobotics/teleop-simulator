@@ -10,6 +10,8 @@
 #include <GLFW/glfw3.h>
 #include <mujoco/mjvisualize.h>
 #include <mujoco/mjrender.h>
+#include <Eigen/Dense>
+#include <Eigen/Geometry>
 
 #include "streamer/shared_memory.hpp"
 #include "sim_env/scene_builder.hpp"
@@ -35,6 +37,7 @@ public:
     double getGripperWidth(const std::string& deviceName);
     DeviceState getDeviceState(const std::string& deviceName);
     void setDeviceActive(const std::string& deviceName, bool state);
+    void setFramePose(const std::string& name, const Eigen::Vector3d& pos, const Eigen::Quaterniond& quat);
 
 private:
     mjModel* model = nullptr;
@@ -43,6 +46,7 @@ private:
     std::vector<DeviceConfig> devices_;
     std::vector<ObjectConfig> objects_;
     std::vector<CameraConfig> cameras_;
+    std::unordered_map<std::string, int> mocap_index_;
 
 private:
     void run_model();

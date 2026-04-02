@@ -118,7 +118,8 @@ static void injectModel(const std::string& modelPath,
                         XMLElement*  compilerEl,
                         XMLElement*  assetEl,
                         XMLElement*  worldbody,
-                        XMLElement*  root) {
+                        XMLElement*  root,
+                        bool is_mocap = false) {
     auto doc = loadXMLDoc(modelPath);
     XMLElement* docRoot = doc->RootElement();
 
@@ -147,19 +148,18 @@ static void injectModel(const std::string& modelPath,
         XMLElement* frame = scene.NewElement("body");
         frame->SetAttribute("name", (namePrefix + "_frame").c_str());
 
+        if (is_mocap){
+            frame->SetAttribute("mocap", "true");
+        }
+
         char posBuf[64], quatBuf[80];
 
         if (!attach_to.empty()) {
-            std::snprintf(posBuf,  sizeof(posBuf),  "%.6g %.6g %.6g",
-                          attach_offset_pos[0], attach_offset_pos[1], attach_offset_pos[2]);
-            std::snprintf(quatBuf, sizeof(quatBuf), "%.6g %.6g %.6g %.6g",
-                          attach_offset_quat[0], attach_offset_quat[1],
-                          attach_offset_quat[2], attach_offset_quat[3]);
+            std::snprintf(posBuf,  sizeof(posBuf),  "%.6g %.6g %.6g", attach_offset_pos[0], attach_offset_pos[1], attach_offset_pos[2]);
+            std::snprintf(quatBuf, sizeof(quatBuf), "%.6g %.6g %.6g %.6g", attach_offset_quat[0], attach_offset_quat[1], attach_offset_quat[2], attach_offset_quat[3]);
         } else {
-            std::snprintf(posBuf,  sizeof(posBuf),  "%.6g %.6g %.6g",
-                          pos[0], pos[1], pos[2]);
-            std::snprintf(quatBuf, sizeof(quatBuf), "%.6g %.6g %.6g %.6g",
-                          quat[0], quat[1], quat[2], quat[3]);
+            std::snprintf(posBuf,  sizeof(posBuf),  "%.6g %.6g %.6g", pos[0], pos[1], pos[2]);
+            std::snprintf(quatBuf, sizeof(quatBuf), "%.6g %.6g %.6g %.6g", quat[0], quat[1], quat[2], quat[3]);
         }
 
         frame->SetAttribute("pos",  posBuf);
@@ -170,8 +170,7 @@ static void injectModel(const std::string& modelPath,
         if (!attach_to.empty()) {
             XMLElement* parent = findBodyByName(worldbody, attach_to);
             if (!parent)
-                throw std::runtime_error(
-                    "injectModel: attach_to body '" + attach_to + "' not found in scene");
+                throw std::runtime_error("injectModel: attach_to body '" + attach_to + "' not found in scene");
             parent->InsertEndChild(frame);
         } else {
             worldbody->InsertEndChild(frame);
@@ -233,8 +232,7 @@ std::vector<DeviceConfig> SceneBuilder::parseDevices(const YAML::Node& sim_confi
 
         auto it = sim_devs.find(name);
         if (it == sim_devs.end()) {
-            std::cerr << "[SceneBuilder] WARNING: device '" << name
-                      << "' in robot_config has no sim_config entry — skipping.\n";
+            std::cerr << "[SceneBuilder] WARNING: device '" << name << "' in robot_config has no sim_config entry — skipping.\n";
             continue;
         }
         const YAML::Node& sd = it->second;
@@ -284,12 +282,16 @@ std::vector<ObjectConfig> SceneBuilder::parseObjects(const YAML::Node& sim_confi
         obj.type       = node["type"].as<std::string>();
         obj.model_path = node["model_path"].as<std::string>();
 
-        auto pos = node["pose"]["position"];
-        obj.position = {pos[0].as<double>(), pos[1].as<double>(), pos[2].as<double>()};
-
-        auto ori = node["pose"]["orientation"];
-        obj.orientation = {ori[0].as<double>(), ori[1].as<double>(),
-                           ori[2].as<double>(), ori[3].as<double>()};
+        if (node["pose"]) {
+            auto pos = node["pose"]["position"];
+            obj.position = {pos[0].as<double>(), pos[1].as<double>(), pos[2].as<double>()};
+            auto ori = node["pose"]["orientation"];
+            obj.orientation = {ori[0].as<double>(), ori[1].as<double>(),
+                               ori[2].as<double>(), ori[3].as<double>()};
+        } else {
+            obj.position    = {0, 0, 0};
+            obj.orientation = {1, 0, 0, 0};
+        }
 
         objects.push_back(obj);
     }
@@ -424,7 +426,7 @@ std::string SceneBuilder::buildSceneXML(const std::vector<DeviceConfig>& devices
         injectModel(obj.model_path, obj.name,
                     obj.position, obj.orientation,
                     "", {0,0,0}, {1,0,0,0},
-                    scene, compilerEl, assetEl, worldbody, root);
+                    scene, compilerEl, assetEl, worldbody, root, obj.type == "mocap");
 
     for (const auto& cam : cameras) {
         XMLElement* camEl = scene.NewElement("camera");

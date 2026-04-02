@@ -119,10 +119,9 @@ void ArmControl::runStateHandler(){
                 T_cmd.linear() = q.toRotationMatrix();
                 Eigen::Isometry3d T_target = transformCommandToBase(T_cmd);
                 interpolator_.planCartesian(interpolator_.getCurrentCartesian(), T_target, ProfileType::LINEAR);
-
                 double target_width = (1.0 - static_cast<double>(cmd.gripper)) * 0.08;
                 gripper->setWidth(target_width);
-
+                target_pose_ = T_base_ * T_target;
                 has_cmd = false;
             }
         }
@@ -265,7 +264,6 @@ void ArmControl::runControlHandler(){
                 std::copy(robot_state.O_F_ext_hat_K.begin(),        robot_state.O_F_ext_hat_K.end(),        entry.F_ext.begin());
                 logger_->write(entry);
             }
-            
             std::array<double, 7> ctrl_array;
             Eigen::Map<Vector7>(ctrl_array.data()) = ctrl_torque;
 
@@ -339,15 +337,6 @@ Vector7 ArmControl::cartesianImpedanceControl(const franka::RobotState& rs) {
     double w = std::sqrt(std::max(JJt.determinant(), 0.0));
 
     double lambda_sq = 0.01;
-    /* 
-    constexpr double w_threshold = 0.035;
-    constexpr double lambda_max_sq = 0.15;
-    if (w < w_threshold) {
-        double ratio = w / w_threshold;
-        lambda_sq = lambda_max_sq * (1.0 - ratio * ratio);
-    }
-    */
-
     Eigen::Matrix<double, 6, 6> JMinvJt_damped = JMinvJt + lambda_sq * Eigen::Matrix<double, 6, 6>::Identity();
     Eigen::Matrix<double, 7, 6> J_pinv = M_inv * J.transpose() * JMinvJt_damped.ldlt().solve(Eigen::Matrix<double, 6, 6>::Identity());
     Eigen::Matrix<double, 7, 7> N = Matrix7::Identity() - J_pinv * J;
@@ -382,4 +371,18 @@ Eigen::Isometry3d ArmControl::transformCommandToBase(const Eigen::Isometry3d& T_
     T_target.translation() = T_origin_.translation() + R_w2b * T_cmd_world.translation() * motion_scale_;
     T_target.linear() = (R_w2b * T_cmd_world.rotation() * R_w2b.transpose()) * T_origin_.rotation();
     return T_target;
+}
+
+Eigen::Isometry3d ArmControl::transformBaseToWorld(const Eigen::Isometry3d& T_base) const {
+    Eigen::Matrix3d R_w2b = T_base_.rotation().transpose();
+    Eigen::Matrix3d R_b2w = T_base_.rotation();
+
+    Eigen::Isometry3d T_world = Eigen::Isometry3d::Identity();
+    T_world.translation() = R_b2w * (T_base.translation() - T_origin_.translation()) / motion_scale_;
+    T_world.linear() = R_b2w * T_base.rotation() * T_origin_.rotation().transpose() * R_w2b;
+    return T_world;
+}
+
+Eigen::Isometry3d ArmControl::getTargetPose() const{
+    return target_pose_;
 }

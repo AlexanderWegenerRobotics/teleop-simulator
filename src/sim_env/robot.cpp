@@ -29,10 +29,8 @@ void Robot::set_simulation(Simulation& _sim, const YAML::Node& sim_dev, const YA
                      : "panda_link8";
 
     std::string urdf_path = sim_dev["urdf_path"].as<std::string>();
-
     auto ori = robot_dev["base_pose"]["orientation"].as<std::vector<double>>();
     std::array<double, 4> base_quat = {ori[0], ori[1], ori[2], ori[3]};
-
     model_ = std::make_unique<franka::Model>(urdf_path, base_quat, ee_frame_name_);
 }
 
@@ -44,17 +42,11 @@ RobotState Robot::readOnce() {
     return robot_state_;
 }
 
-void Robot::updateGMO(const std::array<double, 7>& q,
-                       const std::array<double, 7>& dq,
-                       const std::array<double, 7>& tau_cmd,
-                       double dt) {
+void Robot::updateGMO(const std::array<double, 7>& q, const std::array<double, 7>& dq, const std::array<double, 7>& tau_cmd, double dt) {
     Vector7 tau_eig = Eigen::Map<const Vector7>(tau_cmd.data());
-
     auto [p, tau_model] = model_->computeGMOInputs(q, dq);
-
     r_ += K_GMO * (p - p_prev_ - (tau_eig - tau_model + r_) * dt);
     p_prev_ = p;
-
     std::array<double, 7> tau_ext;
     Eigen::Map<Vector7>(tau_ext.data()) = r_;
     robot_state_.tau_ext_hat_filtered   = tau_ext;

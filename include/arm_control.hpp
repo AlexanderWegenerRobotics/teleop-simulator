@@ -27,6 +27,7 @@ public:
     std::string getDeviceName() const {return name_;}
     void requestState(SysState state){cmd_state_ = state;}
     SysState getState() const {return state_;}
+    Eigen::Isometry3d getTargetPose() const;
 
 public:
     std::unique_ptr<franka::Robot> robot;
@@ -54,12 +55,14 @@ private:
     void updateStateMachine(SysState cmd_state);
     bool isHome();
     Eigen::Isometry3d transformCommandToBase(const Eigen::Isometry3d& T_cmd_world) const;
+    Eigen::Isometry3d transformBaseToWorld(const Eigen::Isometry3d& T_base) const;
 
 private:
     std::string name_;
     Eigen::Vector3d base_position_;
     Eigen::Quaterniond base_orientation_;
     Eigen::Isometry3d T_base_;
+    Eigen::Isometry3d target_pose_;
     Vector7 q0_;
     Vector7 tau_max_;
     Vector7 tau_rate_max_;

@@ -87,18 +87,19 @@ objects:
       position: [0.6, -0.3, 0.6]
       orientation: [1, 0, 0, 0]
 
+  - name: target_right
+    type: mocap
+    model_path: "../models/mujoco/props/target_frame.xml"
+    pose:
+      position: [0, 0, 0]
+      orientation: [1, 0, 0, 0]
 
-debug_frames:
-  - name: target_frame_right
-    enabled: true
-    model_path: "../models/mujoco/props/coordinate_frame.xml"
-  - name: target_frame_left
-    enabled: true
-    model_path: "../models/mujoco/props/coordinate_frame.xml"
-
-
-
-
+  - name: target_left
+    type: mocap
+    model_path: "../models/mujoco/props/target_frame.xml"
+    pose:
+      position: [0, 0, 0]
+      orientation: [1, 0, 0, 0]
 
 
 

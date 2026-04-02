@@ -38,6 +38,16 @@ Simulation::Simulation(const YAML::Node& config) {
     if (!data)
         throw std::runtime_error("mj_makeData failed");
 
+    for (int i = 0; i < model->nbody; ++i) {
+        int mocap_id = model->body_mocapid[i];
+        if (mocap_id >= 0) {
+            const char* name = mj_id2name(model, mjOBJ_BODY, i);
+            if (name){
+                mocap_index_[std::string(name)] = mocap_id;
+            }
+        }
+    }
+
     ctrl_buffer_.assign(model->nu, 0.0);
     buildActuatorIndex();
     applyInitialPositions();
@@ -449,4 +459,17 @@ DeviceState Simulation::getDeviceState(const std::string& deviceName) {
 
 void Simulation::setDeviceActive(const std::string& deviceName, bool state){
     active_devices_[deviceName] = state;
+}
+
+void Simulation::setFramePose(const std::string& name, const Eigen::Vector3d& pos, const Eigen::Quaterniond& quat) {
+    auto it = mocap_index_.find(name);
+    if (it == mocap_index_.end()) return;
+    int id = it->second;
+    data->mocap_pos[id * 3 + 0] = pos.x();
+    data->mocap_pos[id * 3 + 1] = pos.y();
+    data->mocap_pos[id * 3 + 2] = pos.z();
+    data->mocap_quat[id * 4 + 0] = quat.w();
+    data->mocap_quat[id * 4 + 1] = quat.x();
+    data->mocap_quat[id * 4 + 2] = quat.y();
+    data->mocap_quat[id * 4 + 3] = quat.z();
 }
