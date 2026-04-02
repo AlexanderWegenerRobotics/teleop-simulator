@@ -71,9 +71,30 @@ void Robot::populateRobotState(const DeviceState& ds, double dt) {
     updateGMO(robot_state_.q, robot_state_.dq, robot_state_.tau_J_d, dt);
 }
 
+
 void Robot::control(std::function<Torques(const RobotState&, Duration)> control_callback) {
     constexpr double dt = 1.0 / 1000.0;
     constexpr std::chrono::microseconds control_period(static_cast<int>(1e6 / 1000.0));
+
+    constexpr double filter_cutoff_hz = 100.0;
+    constexpr double omega = 2.0 * M_PI * filter_cutoff_hz;
+    constexpr double alpha = (omega * dt) / (1.0 + omega * dt);
+
+    const Vector7 joint_damping = (Vector7() << 10.0, 10.0, 10.0, 10.0, 5.0, 5.0, 2.0).finished();
+
+    constexpr double limit_buffer = 0.15;
+    constexpr double limit_stiffness = 0.0;
+
+    const std::array<std::pair<double, double>, 7> joint_limits = {{
+        {-2.7437,  2.7437},
+        {-1.7837,  1.7837},
+        {-2.9007,  2.9007},
+        {-3.0421, -0.1518},
+        {-2.8065,  2.8065},
+        { 0.5445,  4.5169},
+        {-3.0159,  3.0159}
+    }};
+
     auto next_control_time = std::chrono::high_resolution_clock::now();
     Duration dur;
 
@@ -81,8 +102,11 @@ void Robot::control(std::function<Torques(const RobotState&, Duration)> control_
         std::cout << "You need to set the simulator first" << std::endl;
         return;
     }
+
     sim->setDeviceActive(name_, true);
+    tau_filtered_ = Vector7::Zero();
     bRunning = true;
+
     while (bRunning) {
         if (!sim->isRunning()) {
             std::cout << "Simulation stopped" << std::endl;
@@ -97,9 +121,35 @@ void Robot::control(std::function<Torques(const RobotState&, Duration)> control_
 
         std::array<double, 7> gravity = model_->gravity(robot_state_.q);
 
-        std::array<double, 7> tau_total;
+        Vector7 tau_raw;
         for (int i = 0; i < 7; ++i)
-            tau_total[i] = tau_cmd.tau_J[i] + gravity[i];
+            tau_raw[i] = tau_cmd.tau_J[i] + gravity[i];
+
+        Vector7 dq_eig = Eigen::Map<const Vector7>(robot_state_.dq.data());
+        Vector7 q_eig = Eigen::Map<const Vector7>(robot_state_.q.data());
+
+        Vector7 tau_damping = joint_damping.cwiseProduct(dq_eig);
+        Vector7 tau_damped = tau_raw - tau_damping;
+
+        Vector7 tau_limit_repulsion = Vector7::Zero();
+        for (int i = 0; i < 7; ++i) {
+            double q_i = q_eig[i];
+            double lo = joint_limits[i].first;
+            double hi = joint_limits[i].second;
+
+            double dist_lo = q_i - lo;
+            double dist_hi = hi - q_i;
+
+            if (dist_lo < limit_buffer)
+                tau_limit_repulsion[i] = limit_stiffness * (limit_buffer - dist_lo);
+
+            if (dist_hi < limit_buffer)
+                tau_limit_repulsion[i] = -limit_stiffness * (limit_buffer - dist_hi);
+        }
+
+        Vector7 tau_total = tau_damped + tau_limit_repulsion;
+
+        tau_filtered_ = alpha * tau_total + (1.0 - alpha) * tau_filtered_;
 
         if (tau_cmd.motion_finished) {
             std::cout << "Stopped robot arm control loop" << std::endl;
@@ -107,8 +157,10 @@ void Robot::control(std::function<Torques(const RobotState&, Duration)> control_
         }
 
         if (bRunning) {
-            robot_state_.tau_J_d = tau_total;
-            sim->setCtrl(name_, std::vector<double>(tau_total.begin(), tau_total.end()));
+            std::array<double, 7> tau_out;
+            Eigen::Map<Vector7>(tau_out.data()) = tau_filtered_;
+            robot_state_.tau_J_d = tau_out;
+            sim->setCtrl(name_, std::vector<double>(tau_out.begin(), tau_out.end()));
             next_control_time += control_period;
             std::this_thread::sleep_until(next_control_time);
         }

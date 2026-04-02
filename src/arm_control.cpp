@@ -298,14 +298,16 @@ Vector7 ArmControl::jointImpedanceControl(const franka::RobotState& rs) {
     return tau;
 }
 
+
 Vector7 ArmControl::cartesianImpedanceControl(const franka::RobotState& rs) {
     Eigen::Map<const Vector7> q(rs.q.data());
     Eigen::Map<const Vector7> dq(rs.dq.data());
-    Eigen::Isometry3d T_ee(Eigen::Map<const Eigen::Matrix4d>(rs.O_T_EE.data()));
 
+    Eigen::Isometry3d T_ee(Eigen::Map<const Eigen::Matrix4d>(rs.O_T_EE.data()));
     Eigen::Isometry3d T_ee_target = interpolator_.getCurrentCartesian();
+
     Eigen::Vector3d pos_error = T_ee_target.translation() - T_ee.translation();
-    
+
     Eigen::Quaterniond q_target(T_ee_target.rotation());
     Eigen::Quaterniond q_current(T_ee.rotation());
     if (q_target.dot(q_current) < 0.0) q_target.coeffs() *= -1.0;
@@ -316,7 +318,7 @@ Vector7 ArmControl::cartesianImpedanceControl(const franka::RobotState& rs) {
     error << pos_error, ori_error;
 
     auto J_array = model->zeroJacobian(rs.q);
-    Matrix6x7 J  = Eigen::Map<Matrix6x7>(J_array.data());
+    Matrix6x7 J = Eigen::Map<Matrix6x7>(J_array.data());
 
     Eigen::Matrix<double, 6, 1> ee_vel = J * dq;
 
@@ -331,12 +333,24 @@ Vector7 ArmControl::cartesianImpedanceControl(const franka::RobotState& rs) {
 
     Eigen::LDLT<Matrix7> M_ldlt(M);
     Eigen::Matrix<double, 7, 7> M_inv = M_ldlt.solve(Matrix7::Identity());
-
     Eigen::Matrix<double, 6, 6> JMinvJt = J * M_inv * J.transpose();
-    Eigen::Matrix<double, 7, 6> J_pinv  = M_inv * J.transpose() * JMinvJt.ldlt().solve(Eigen::Matrix<double, 6, 6>::Identity());
 
+    Eigen::Matrix<double, 6, 6> JJt = J * J.transpose();
+    double w = std::sqrt(std::max(JJt.determinant(), 0.0));
+
+    double lambda_sq = 0.01;
+    /* 
+    constexpr double w_threshold = 0.035;
+    constexpr double lambda_max_sq = 0.15;
+    if (w < w_threshold) {
+        double ratio = w / w_threshold;
+        lambda_sq = lambda_max_sq * (1.0 - ratio * ratio);
+    }
+    */
+
+    Eigen::Matrix<double, 6, 6> JMinvJt_damped = JMinvJt + lambda_sq * Eigen::Matrix<double, 6, 6>::Identity();
+    Eigen::Matrix<double, 7, 6> J_pinv = M_inv * J.transpose() * JMinvJt_damped.ldlt().solve(Eigen::Matrix<double, 6, 6>::Identity());
     Eigen::Matrix<double, 7, 7> N = Matrix7::Identity() - J_pinv * J;
-
     Vector7 tau_null = N * (kp_null_.cwiseProduct(q0_ - q) - kd_null_.cwiseProduct(dq));
 
     return tau_task + tau_null + tau_coriolis;

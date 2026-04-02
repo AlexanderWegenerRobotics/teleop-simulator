@@ -49,6 +49,13 @@ objects:
     type: static
     model_path: "../models/mujoco/props/table.xml"
     pose:
+      position: [0.4, 0, 0]
+      orientation: [1, 0, 0, 0]
+
+  - name: wall
+    type: static
+    model_path: "../models/mujoco/props/wall.xml"
+    pose:
       position: [0, 0, 0]
       orientation: [1, 0, 0, 0]
 
@@ -59,12 +66,43 @@ objects:
       position: [0, -0.6, 0.8]
       orientation: [0.5, 0.5, 0.5, 0.5]
 
-  - name: left_base_frame
+  - name: box_1
     type: visual
-    model_path: "../models/mujoco/props/coordinate_frame.xml"
+    model_path: "../models/mujoco/props/box_red.xml"
     pose:
-      position: [0, 0.6, 0.8]
-      orientation: [0.5, -0.5,  0.5, -0.5]
+      position: [0.6, 0.0, 0.6]
+      orientation: [1, 0, 0, 0]
+
+  - name: box_2
+    type: visual
+    model_path: "../models/mujoco/props/box_green.xml"
+    pose:
+      position: [0.6, 0.3, 0.6]
+      orientation: [1, 0, 0, 0]
+
+  - name: box_3
+    type: visual
+    model_path: "../models/mujoco/props/box_blue.xml"
+    pose:
+      position: [0.6, -0.3, 0.6]
+      orientation: [1, 0, 0, 0]
+
+
+debug_frames:
+  - name: target_frame_right
+    enabled: true
+    model_path: "../models/mujoco/props/coordinate_frame.xml"
+  - name: target_frame_left
+    enabled: true
+    model_path: "../models/mujoco/props/coordinate_frame.xml"
+
+
+
+
+
+
+
+
 
 cameras:
   - name: workspace_overview_1

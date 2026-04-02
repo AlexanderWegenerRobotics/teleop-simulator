@@ -74,10 +74,11 @@ private:
     std::unique_ptr<Model> model_;
     RobotState             robot_state_;
     std::atomic<bool>      bRunning{false};
-
+    Vector7 tau_filtered_;
+    
     // GMO integrator state
-    Vector7                r_;
-    Vector7                p_prev_;
+    Vector7 r_;
+    Vector7 p_prev_;
     static constexpr double K_GMO = 50.0;
 };
 
