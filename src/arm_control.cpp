@@ -365,11 +365,22 @@ bool ArmControl::isHome() {
     return false;
 }
 
+/*
+strange 
 Eigen::Isometry3d ArmControl::transformCommandToBase(const Eigen::Isometry3d& T_cmd_world) const {
     Eigen::Matrix3d R_w2b = T_base_.rotation().transpose();
     Eigen::Isometry3d T_target = Eigen::Isometry3d::Identity();
     T_target.translation() = T_origin_.translation() + R_w2b * T_cmd_world.translation() * motion_scale_;
     T_target.linear() = (R_w2b * T_cmd_world.rotation() * R_w2b.transpose()) * T_origin_.rotation();
+    return T_target;
+}
+*/
+
+Eigen::Isometry3d ArmControl::transformCommandToBase(const Eigen::Isometry3d& T_cmd_world) const {
+    Eigen::Matrix3d R_w2b = T_base_.rotation().transpose();
+    Eigen::Isometry3d T_target = Eigen::Isometry3d::Identity();
+    T_target.translation() = T_origin_.translation() + R_w2b * T_cmd_world.translation() * motion_scale_;
+    T_target.linear() = T_origin_.rotation() * (R_w2b * T_cmd_world.rotation() * R_w2b.transpose());
     return T_target;
 }
 
