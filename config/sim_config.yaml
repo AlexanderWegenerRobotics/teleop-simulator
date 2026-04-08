@@ -67,21 +67,21 @@ objects:
       orientation: [0.5, 0.5, 0.5, 0.5]
 
   - name: box_1
-    type: visual
+    type: dynamic
     model_path: "../models/mujoco/props/box_red.xml"
     pose:
       position: [0.6, 0.0, 0.6]
       orientation: [1, 0, 0, 0]
 
   - name: box_2
-    type: visual
+    type: dynamic
     model_path: "../models/mujoco/props/box_green.xml"
     pose:
       position: [0.6, 0.3, 0.6]
       orientation: [1, 0, 0, 0]
 
   - name: box_3
-    type: visual
+    type: dynamic
     model_path: "../models/mujoco/props/box_blue.xml"
     pose:
       position: [0.6, -0.3, 0.6]

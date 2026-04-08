@@ -26,6 +26,10 @@ ArmControl::ArmControl(const YAML::Node& device_config)
     base_position_ = Eigen::Vector3d(pos[0], pos[1], pos[2]);
     base_orientation_ = Eigen::Quaterniond(ori[0], ori[1], ori[2], ori[3]);  // w x y z
 
+    R_tool <<   0, -1,  0,
+                0,  0,  1,
+                -1,  0,  0;
+
     T_base_ = Eigen::Isometry3d::Identity();
     T_base_.translation() = base_position_;
     T_base_.linear()      = base_orientation_.toRotationMatrix();
@@ -365,32 +369,24 @@ bool ArmControl::isHome() {
     return false;
 }
 
-/*
-strange 
-Eigen::Isometry3d ArmControl::transformCommandToBase(const Eigen::Isometry3d& T_cmd_world) const {
-    Eigen::Matrix3d R_w2b = T_base_.rotation().transpose();
-    Eigen::Isometry3d T_target = Eigen::Isometry3d::Identity();
-    T_target.translation() = T_origin_.translation() + R_w2b * T_cmd_world.translation() * motion_scale_;
-    T_target.linear() = (R_w2b * T_cmd_world.rotation() * R_w2b.transpose()) * T_origin_.rotation();
-    return T_target;
-}
-*/
 
 Eigen::Isometry3d ArmControl::transformCommandToBase(const Eigen::Isometry3d& T_cmd_world) const {
     Eigen::Matrix3d R_w2b = T_base_.rotation().transpose();
+
     Eigen::Isometry3d T_target = Eigen::Isometry3d::Identity();
     T_target.translation() = T_origin_.translation() + R_w2b * T_cmd_world.translation() * motion_scale_;
-    T_target.linear() = T_origin_.rotation() * (R_w2b * T_cmd_world.rotation() * R_w2b.transpose());
+    T_target.linear() = T_origin_.rotation() * R_tool * T_cmd_world.rotation() * R_tool.transpose();
+
     return T_target;
 }
 
 Eigen::Isometry3d ArmControl::transformBaseToWorld(const Eigen::Isometry3d& T_base) const {
-    Eigen::Matrix3d R_w2b = T_base_.rotation().transpose();
     Eigen::Matrix3d R_b2w = T_base_.rotation();
 
     Eigen::Isometry3d T_world = Eigen::Isometry3d::Identity();
     T_world.translation() = R_b2w * (T_base.translation() - T_origin_.translation()) / motion_scale_;
-    T_world.linear() = R_b2w * T_base.rotation() * T_origin_.rotation().transpose() * R_w2b;
+    T_world.linear() = T_origin_.rotation().transpose() * T_base.rotation();
+
     return T_world;
 }
 

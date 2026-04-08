@@ -7,6 +7,7 @@
 
   <worldbody>
     <body name="box" pos="0 0 0">
+      <freejoint name="box_joint"/>
       <geom name="box_geom" type="box" size="0.03 0.03 0.03"
             mass="0.1" material="box_mat" condim="6"
             friction="0.3 0.005 0.001"

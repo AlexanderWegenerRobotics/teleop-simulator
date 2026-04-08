@@ -61,6 +61,7 @@ private:
     std::string name_;
     Eigen::Vector3d base_position_;
     Eigen::Quaterniond base_orientation_;
+    Eigen::Matrix3d R_tool;
     Eigen::Isometry3d T_base_;
     Eigen::Isometry3d target_pose_;
     Vector7 q0_;
