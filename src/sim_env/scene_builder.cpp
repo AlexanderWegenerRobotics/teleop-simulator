@@ -119,7 +119,8 @@ static void injectModel(const std::string& modelPath,
                         XMLElement*  assetEl,
                         XMLElement*  worldbody,
                         XMLElement*  root,
-                        bool is_mocap = false) {
+                        bool is_mocap = false,
+                        bool is_dynamic = false) {
     auto doc = loadXMLDoc(modelPath);
     XMLElement* docRoot = doc->RootElement();
 
@@ -145,35 +146,45 @@ static void injectModel(const std::string& modelPath,
     }
 
     if (XMLElement* rw = docRoot->FirstChildElement("worldbody")) {
-        XMLElement* frame = scene.NewElement("body");
-        frame->SetAttribute("name", (namePrefix + "_frame").c_str());
+    char posBuf[64], quatBuf[80];
 
-        if (is_mocap){
-            frame->SetAttribute("mocap", "true");
-        }
+    if (!attach_to.empty()) {
+        std::snprintf(posBuf,  sizeof(posBuf),  "%.6g %.6g %.6g", attach_offset_pos[0], attach_offset_pos[1], attach_offset_pos[2]);
+        std::snprintf(quatBuf, sizeof(quatBuf), "%.6g %.6g %.6g %.6g", attach_offset_quat[0], attach_offset_quat[1], attach_offset_quat[2], attach_offset_quat[3]);
+    } else {
+        std::snprintf(posBuf,  sizeof(posBuf),  "%.6g %.6g %.6g", pos[0], pos[1], pos[2]);
+        std::snprintf(quatBuf, sizeof(quatBuf), "%.6g %.6g %.6g %.6g", quat[0], quat[1], quat[2], quat[3]);
+    }
 
-        char posBuf[64], quatBuf[80];
-
-        if (!attach_to.empty()) {
-            std::snprintf(posBuf,  sizeof(posBuf),  "%.6g %.6g %.6g", attach_offset_pos[0], attach_offset_pos[1], attach_offset_pos[2]);
-            std::snprintf(quatBuf, sizeof(quatBuf), "%.6g %.6g %.6g %.6g", attach_offset_quat[0], attach_offset_quat[1], attach_offset_quat[2], attach_offset_quat[3]);
+    if (is_dynamic) {
+            // Inject top-level bodies directly into worldbody so freejoint is at the right depth
+            for (XMLElement* child = rw->FirstChildElement(); child; child = child->NextSiblingElement()) {
+                XMLNode* clone = child->DeepClone(&scene);
+                XMLElement* cloneEl = clone->ToElement();
+                if (cloneEl && std::string(cloneEl->Name()) == "body") {
+                    cloneEl->SetAttribute("pos",  posBuf);
+                    cloneEl->SetAttribute("quat", quatBuf);
+                }
+                worldbody->InsertEndChild(clone);
+            }
         } else {
-            std::snprintf(posBuf,  sizeof(posBuf),  "%.6g %.6g %.6g", pos[0], pos[1], pos[2]);
-            std::snprintf(quatBuf, sizeof(quatBuf), "%.6g %.6g %.6g %.6g", quat[0], quat[1], quat[2], quat[3]);
-        }
+            // All other types (static, visual, mocap): wrap in a frame body as before
+            XMLElement* frame = scene.NewElement("body");
+            frame->SetAttribute("name", (namePrefix + "_frame").c_str());
+            if (is_mocap)
+                frame->SetAttribute("mocap", "true");
+            frame->SetAttribute("pos",  posBuf);
+            frame->SetAttribute("quat", quatBuf);
+            deepCopyChildren(frame, scene, rw);
 
-        frame->SetAttribute("pos",  posBuf);
-        frame->SetAttribute("quat", quatBuf);
-
-        deepCopyChildren(frame, scene, rw);
-
-        if (!attach_to.empty()) {
-            XMLElement* parent = findBodyByName(worldbody, attach_to);
-            if (!parent)
-                throw std::runtime_error("injectModel: attach_to body '" + attach_to + "' not found in scene");
-            parent->InsertEndChild(frame);
-        } else {
-            worldbody->InsertEndChild(frame);
+            if (!attach_to.empty()) {
+                XMLElement* parent = findBodyByName(worldbody, attach_to);
+                if (!parent)
+                    throw std::runtime_error("injectModel: attach_to body '" + attach_to + "' not found in scene");
+                parent->InsertEndChild(frame);
+            } else {
+                worldbody->InsertEndChild(frame);
+            }
         }
     }
 
@@ -426,7 +437,7 @@ std::string SceneBuilder::buildSceneXML(const std::vector<DeviceConfig>& devices
         injectModel(obj.model_path, obj.name,
                     obj.position, obj.orientation,
                     "", {0,0,0}, {1,0,0,0},
-                    scene, compilerEl, assetEl, worldbody, root, obj.type == "mocap");
+                    scene, compilerEl, assetEl, worldbody, root, obj.type == "mocap", obj.type == "dynamic");
 
     for (const auto& cam : cameras) {
         XMLElement* camEl = scene.NewElement("camera");
