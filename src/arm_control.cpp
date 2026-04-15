@@ -26,9 +26,17 @@ ArmControl::ArmControl(const YAML::Node& device_config)
     base_position_ = Eigen::Vector3d(pos[0], pos[1], pos[2]);
     base_orientation_ = Eigen::Quaterniond(ori[0], ori[1], ori[2], ori[3]);  // w x y z
 
-    R_tool <<   0, -1,  0,
-                0,  0,  1,
-                -1,  0,  0;
+    if (name_.find("right") != std::string::npos) {
+        R_tool <<  0, -1,  0,
+                   0,  0,  1,
+                  -1,  0,  0;
+        std::cout << "[DEBUG] Using R_tool RIGHT" << std::endl;
+    } else {
+        R_tool <<  0, -1,  0,
+           0,  0,  1,
+          -1,  0,  0;
+          std::cout << "[DEBUG] Using R_tool LEFT" << std::endl;
+    }
 
     T_base_ = Eigen::Isometry3d::Identity();
     T_base_.translation() = base_position_;

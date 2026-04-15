@@ -292,6 +292,7 @@ std::vector<ObjectConfig> SceneBuilder::parseObjects(const YAML::Node& sim_confi
         obj.name       = node["name"].as<std::string>();
         obj.type       = node["type"].as<std::string>();
         obj.model_path = node["model_path"].as<std::string>();
+        obj.enabled = node["enabled"] ? node["enabled"].as<bool>() : true;
 
         if (node["pose"]) {
             auto pos = node["pose"]["position"];
@@ -428,16 +429,20 @@ std::string SceneBuilder::buildSceneXML(const std::vector<DeviceConfig>& devices
     }
 
     for (const auto& dev : devices)
-        injectModel(dev.model_path, dev.name,
-                    dev.position, dev.orientation,
-                    dev.attach_to, dev.attach_offset_pos, dev.attach_offset_quat,
-                    scene, compilerEl, assetEl, worldbody, root);
+        if(dev.enabled){
+            injectModel(dev.model_path, dev.name,
+                        dev.position, dev.orientation,
+                        dev.attach_to, dev.attach_offset_pos, dev.attach_offset_quat,
+                        scene, compilerEl, assetEl, worldbody, root);
+        }
 
     for (const auto& obj : objects)
+        if(obj.enabled){
         injectModel(obj.model_path, obj.name,
                     obj.position, obj.orientation,
                     "", {0,0,0}, {1,0,0,0},
                     scene, compilerEl, assetEl, worldbody, root, obj.type == "mocap", obj.type == "dynamic");
+        }
 
     for (const auto& cam : cameras) {
         XMLElement* camEl = scene.NewElement("camera");

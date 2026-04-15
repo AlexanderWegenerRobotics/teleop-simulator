@@ -83,16 +83,30 @@ void Avatar::start(){
     if (cmd_channel_) cmd_channel_->setState(SysState::IDLE);
     auto last_heartbeat = std::chrono::steady_clock::now();
     auto start_time = std::chrono::steady_clock::now();
+    if (cmd_channel_) cmd_channel_->resetAliveTimer();
     bRunning = true;
    
     while(bRunning){
         SysState cmd_state = cmd_requested_.load();
-        updateStateMachine(cmd_state);
+
+        // connection watchdog — if operator goes silent, fall back to IDLE
+        if (cmd_channel_ && !cmd_channel_->isAlive()) {
+            if (state_ != SysState::IDLE && state_ != SysState::OFFLINE) {
+                std::cout << "[AVATAR-WARN]: Operator connection lost, reverting to IDLE." << std::endl;
+                requestAllDevices(SysState::IDLE);
+                state_ = SysState::IDLE;
+                cmd_requested_.store(SysState::IDLE);
+                cmd_channel_->setState(SysState::IDLE);
+            }
+        } else {
+            updateStateMachine(cmd_state);
+        }
 
         if (state_ != prev_state && cmd_channel_) {
             cmd_channel_->setState(state_);
         }
         prev_state = state_;
+
 
         // heartbeat
         auto now = std::chrono::steady_clock::now();
@@ -135,12 +149,22 @@ void Avatar::updateStateMachine(SysState cmd_state){
         case SysState::IDLE:
             if(cmd_state == SysState::HOMING){
                 requestAllDevices(SysState::HOMING);
+                state_ = SysState::HOMING;  // transition avatar itself immediately
+                std::cout << "[AVATAR-INFO]: Homing." << std::endl;
             }
-            if(allInState(SysState::AWAITING)){
+            break;
+
+        case SysState::HOMING:
+            if(cmd_state == SysState::IDLE){
+                requestAllDevices(SysState::IDLE);
+                state_ = SysState::IDLE;
+            }
+            else if(allInState(SysState::AWAITING)){
                 state_ = SysState::AWAITING;
                 std::cout << "[AVATAR-INFO]: Awaiting engagement." << std::endl;
             }
             break;
+
         case SysState::AWAITING:
             if(cmd_state == SysState::IDLE){
                 requestAllDevices(SysState::IDLE);
@@ -152,6 +176,7 @@ void Avatar::updateStateMachine(SysState cmd_state){
                 std::cout << "[AVATAR-INFO]: Engage system." << std::endl;
             }
             break;
+
         case SysState::ENGAGED:
             if(cmd_state == SysState::IDLE){
                 requestAllDevices(SysState::IDLE);
@@ -164,6 +189,7 @@ void Avatar::updateStateMachine(SysState cmd_state){
                 std::cout << "[AVATAR-INFO]: Switch engage -> pause." << std::endl;
             }
             break;
+            
         case SysState::PAUSED:
             if(cmd_state == SysState::IDLE){
                 requestAllDevices(SysState::IDLE);

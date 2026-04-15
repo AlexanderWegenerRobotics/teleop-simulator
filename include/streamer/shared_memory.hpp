@@ -13,7 +13,7 @@
 
 constexpr int    SHM_N_SLOTS  = 3;
 constexpr size_t SHM_MAX_W = 1280;
-constexpr size_t SHM_MAX_H = 720;
+constexpr size_t SHM_MAX_H = 960;
 constexpr size_t SHM_CHANNELS = 3;
 
 struct SharedFrameBuffer {
@@ -52,6 +52,11 @@ public:
     }
 
     void write(const uint8_t* rgb, size_t size) {
+        size_t max_size = SHM_MAX_W * SHM_MAX_H * SHM_CHANNELS;
+        if (size > max_size)
+            throw std::runtime_error("SharedMemoryWriter::write: frame size " +
+                std::to_string(size) + " exceeds slot capacity " +
+                std::to_string(max_size));
         uint32_t slot = buf_->write_idx.load() % SHM_N_SLOTS;
         std::memcpy(buf_->slots[slot], rgb, size);
         buf_->write_idx.fetch_add(1);

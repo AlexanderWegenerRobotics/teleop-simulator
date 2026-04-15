@@ -8,9 +8,9 @@
   <worldbody>
     <body name="box" pos="0 0 0">
       <freejoint name="box_joint"/>
-      <geom name="box_geom" type="box" size="0.03 0.03 0.03"
-            mass="0.1" material="box_mat" condim="6"
-            friction="0.3 0.005 0.001"
+      <geom name="box_geom" type="box" size="0.02 0.02 0.02"
+            mass="0.05" material="box_mat" condim="6"
+            friction="0.8 0.005 0.001"
             solimp="0.95 0.99 0.001" solref="0.02 1.0"/>
       <site name="box_center" pos="0 0 0" size="0.003" rgba="1 0 0 1"/>
     </body>

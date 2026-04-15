@@ -68,7 +68,7 @@ void Robot::control(std::function<Torques(const RobotState&, Duration)> control_
     constexpr double dt = 1.0 / 1000.0;
     constexpr std::chrono::microseconds control_period(static_cast<int>(1e6 / 1000.0));
 
-    constexpr double filter_cutoff_hz = 100.0;
+    constexpr double filter_cutoff_hz = 500.0;
     constexpr double omega = 2.0 * M_PI * filter_cutoff_hz;
     constexpr double alpha = (omega * dt) / (1.0 + omega * dt);
 
@@ -120,8 +120,8 @@ void Robot::control(std::function<Torques(const RobotState&, Duration)> control_
         Vector7 dq_eig = Eigen::Map<const Vector7>(robot_state_.dq.data());
         Vector7 q_eig = Eigen::Map<const Vector7>(robot_state_.q.data());
 
-        Vector7 tau_damping = joint_damping.cwiseProduct(dq_eig);
-        Vector7 tau_damped = tau_raw - tau_damping;
+        //Vector7 tau_damping = joint_damping.cwiseProduct(dq_eig);
+        Vector7 tau_damped = tau_raw;  // - tau_damping;
 
         Vector7 tau_limit_repulsion = Vector7::Zero();
         for (int i = 0; i < 7; ++i) {

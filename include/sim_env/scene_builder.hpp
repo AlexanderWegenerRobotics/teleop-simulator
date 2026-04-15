@@ -33,6 +33,7 @@ struct ObjectConfig {
     std::string            model_path;
     std::array<double, 3>  position;
     std::array<double, 4>  orientation;
+    bool                   enabled=true;
 };
 
 struct CameraConfig {

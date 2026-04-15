@@ -8,8 +8,8 @@ status_interval_ms: 500
 bitrate_kbps: 2000
 fec_percentage: 10
 fps: 30
-stream_width: 640
-stream_height: 480
+stream_width: 1280
+stream_height: 960
 
 # source_type: "mujoco" | "realsense"
 source_type: "mujoco"

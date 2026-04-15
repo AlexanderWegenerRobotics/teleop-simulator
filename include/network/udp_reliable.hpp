@@ -62,6 +62,7 @@ public:
 
     bool isAlive() const;
     uint64_t lastRecvTimeMs() const;
+    void resetAliveTimer();
 
 private:
     struct PendingMessage {
@@ -102,5 +103,5 @@ private:
     std::atomic<uint32_t> recv_seq_{0};
 
     static constexpr int  RECV_BUFFER_SIZE = 65536;
-    static constexpr int  ALIVE_TIMEOUT_MS = 2000;
+    static constexpr int  ALIVE_TIMEOUT_MS = 10000;
 };

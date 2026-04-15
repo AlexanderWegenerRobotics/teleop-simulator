@@ -195,3 +195,9 @@ bool UdpReliable::isAlive() const {
 uint64_t UdpReliable::lastRecvTimeMs() const {
     return last_recv_time_ms_.load();
 }
+
+void UdpReliable::resetAliveTimer() {
+    auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    last_recv_time_ms_.store(static_cast<uint64_t>(now_ms));
+}
