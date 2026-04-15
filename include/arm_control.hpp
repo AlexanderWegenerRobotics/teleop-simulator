@@ -32,6 +32,9 @@ public:
     void initSelfCollisionProtection(std::shared_ptr<DeviceRegistry> registry, const SelfCollisionConfig& config) {
         scp_ = std::make_unique<SelfCollisionProtection>(name_, std::move(registry), config);
     }
+    void setCollisionImportanceWeight(double weight){scp_state_.weight = weight; 
+        std::cout << name_ << " weight parameter set to "  << weight << std::endl;
+    }
 
 public:
     std::unique_ptr<franka::Robot> robot;
@@ -76,6 +79,7 @@ private:
     franka::RobotState current_state;
     Eigen::Isometry3d T_origin_;
     std::unique_ptr<SelfCollisionProtection> scp_;
+    CollisionState scp_state_;
 
 private:
     Vector7 kp_joint_, kd_joint_;

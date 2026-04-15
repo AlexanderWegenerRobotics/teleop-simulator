@@ -33,6 +33,9 @@ Avatar::Avatar(const YAML::Node& config) {
         arm->initSelfCollisionProtection(device_registry_, scp_config);
     }
 
+    getArm("arm_right")->setCollisionImportanceWeight(1.0);
+    getArm("arm_left")->setCollisionImportanceWeight(1.0);
+
     if (sys_config["avatar"]["transmission"]) {
         UdpReliableConfig cmd_cfg;
         cmd_cfg.transport.remote_ip   = sys_config["avatar"]["transmission"]["remote_ip"].as<std::string>();
@@ -238,4 +241,10 @@ bool Avatar::anyoneInState(SysState state) {
 void Avatar::requestAllDevices(SysState state) {
     for (auto& arm  : arm_instances)  arm->requestState(state);
     for (auto& head : head_instances) head->requestState(state);
+}
+
+ArmControl* Avatar::getArm(const std::string& name) {
+    for (auto& arm : arm_instances)
+        if (arm->getDeviceName() == name) return arm;
+    return nullptr;
 }

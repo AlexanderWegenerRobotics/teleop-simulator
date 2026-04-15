@@ -26,6 +26,7 @@ private:
     bool allInState(SysState state);
     bool anyoneInState(SysState state);
     void requestAllDevices(SysState state);
+    ArmControl* getArm(const std::string& name);
 
 private:
     std::vector<ArmControl*> arm_instances;

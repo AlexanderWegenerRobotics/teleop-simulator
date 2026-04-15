@@ -31,12 +31,10 @@ ArmControl::ArmControl(const YAML::Node& device_config)
         R_tool <<  0, -1,  0,
                    0,  0,  1,
                   -1,  0,  0;
-        std::cout << "[DEBUG] Using R_tool RIGHT" << std::endl;
     } else {
         R_tool <<  0, -1,  0,
-           0,  0,  1,
-          -1,  0,  0;
-          std::cout << "[DEBUG] Using R_tool LEFT" << std::endl;
+                0,  0,  1,
+                -1,  0,  0;
     }
 
     T_base_ = Eigen::Isometry3d::Identity();
@@ -131,16 +129,35 @@ void ArmControl::runStateHandler(){
                 T_cmd.translation() = pos;
                 T_cmd.linear() = q.toRotationMatrix();
                 Eigen::Isometry3d T_target = transformCommandToBase(T_cmd);
+                // Apply collision filter to the new command target
                 applySelfCollisionFilter(T_target);
                 interpolator_.planCartesian(interpolator_.getCurrentCartesian(), T_target, ProfileType::LINEAR);
                 double target_width = (1.0 - static_cast<double>(cmd.gripper)) * 0.08;
                 gripper->setWidth(target_width);
                 target_pose_ = T_base_ * T_target;
                 has_cmd = false;
+            } else {
+                // FIX: Even without a new command, re-filter the current interpolator
+                // target against updated peer positions. Without this, the interpolator
+                // keeps driving toward a stale target while the other arm may have moved
+                // closer. This is critical under latency — commands arrive infrequently
+                // but the safety filter must run every cycle.
+                Eigen::Isometry3d T_current_target = interpolator_.getCurrentCartesian();
+                Eigen::Isometry3d T_filtered = T_current_target;
+                applySelfCollisionFilter(T_filtered);
+
+                // Only re-plan if the filter actually modified the target
+                double pos_change = (T_filtered.translation() - T_current_target.translation()).norm();
+                if (pos_change > 1e-6) {
+                    interpolator_.planCartesian(interpolator_.getCurrentCartesian(), T_filtered, ProfileType::LINEAR);
+                    target_pose_ = T_base_ * T_filtered;
+                }
             }
         }
 
-        // send state back
+        // Publish state to registry and send state back to operator.
+        // Publishing happens here for ALL engaged states, regardless of whether
+        // a command arrived. This ensures the peer arm always has fresh data.
         if (transmission_) {
             franka::RobotState rs;
             {
@@ -150,7 +167,9 @@ void ArmControl::runStateHandler(){
             Eigen::Isometry3d T_ee(Eigen::Map<const Eigen::Matrix4d>(rs.O_T_EE.data()));
             Eigen::Quaterniond q_ee(T_ee.rotation());
 
-            if (scp_ && state_ == SysState::ENGAGED) {
+            // Publish to collision registry — always when engaged or awaiting,
+            // so the peer arm has position data even before commands flow.
+            if (scp_ && (state_ == SysState::ENGAGED || state_ == SysState::AWAITING)) {
                 auto J_array = model->zeroJacobian(rs.q);
                 Matrix6x7 J  = Eigen::Map<Matrix6x7>(J_array.data());
                 Eigen::Map<const Vector7> dq(rs.dq.data());
@@ -159,7 +178,7 @@ void ArmControl::runStateHandler(){
                 CollisionState ds;
                 ds.ee_position = T_base_.rotation() * T_ee.translation() + T_base_.translation();
                 ds.ee_velocity = T_base_.rotation() * ee_vel;
-                ds.weight      = 1.0;
+                ds.weight      = scp_state_.weight;
                 scp_->publishState(ds);
             }
 
@@ -360,9 +379,6 @@ Vector7 ArmControl::cartesianImpedanceControl(const franka::RobotState& rs) {
     Eigen::Matrix<double, 7, 7> M_inv = M_ldlt.solve(Matrix7::Identity());
     Eigen::Matrix<double, 6, 6> JMinvJt = J * M_inv * J.transpose();
 
-    Eigen::Matrix<double, 6, 6> JJt = J * J.transpose();
-    double w = std::sqrt(std::max(JJt.determinant(), 0.0));
-
     double lambda_sq = 0.01;
     Eigen::Matrix<double, 6, 6> JMinvJt_damped = JMinvJt + lambda_sq * Eigen::Matrix<double, 6, 6>::Identity();
     Eigen::Matrix<double, 7, 6> J_pinv = M_inv * J.transpose() * JMinvJt_damped.ldlt().solve(Eigen::Matrix<double, 6, 6>::Identity());
@@ -418,49 +434,61 @@ Eigen::Isometry3d ArmControl::getTargetPose() const{
 }
 
 void ArmControl::applySelfCollisionFilter(Eigen::Isometry3d& T_target) {
-    if (!scp_) return;
- 
+    if (!scp_ || !scp_->config().enabled) return;
+
     Eigen::Isometry3d T_ee;
+    Eigen::Vector3d ee_vel_base = Eigen::Vector3d::Zero();
     {
         std::lock_guard<std::mutex> lock(state_mtx);
         T_ee = Eigen::Isometry3d(Eigen::Map<const Eigen::Matrix4d>(current_state.O_T_EE.data()));
+        auto J_array = model->zeroJacobian(current_state.q);
+        Matrix6x7 J = Eigen::Map<Matrix6x7>(J_array.data());
+        Eigen::Map<const Vector7> dq(current_state.dq.data());
+        ee_vel_base = (J * dq).head<3>();
     }
- 
+
     const Eigen::Matrix3d& R_b2w = T_base_.rotation();
     Eigen::Vector3d ee_pos_world = R_b2w * T_ee.translation() + T_base_.translation();
+    Eigen::Vector3d ee_vel_world = R_b2w * ee_vel_base;
     Eigen::Vector3d target_pos_world = R_b2w * T_target.translation() + T_base_.translation();
- 
-    // Commanded velocity: direction the operator wants to move.
-    // This is the quantity the CBF will filter.
-    constexpr double dt = 1.0 / 100.0;
-    Eigen::Vector3d nominal_vel = (target_pos_world - ee_pos_world) / dt;
- 
-    // Clamp to physical limits
-    constexpr double max_vel = 0.5;
-    double vel_norm = nominal_vel.norm();
-    if (vel_norm > max_vel) {
-        nominal_vel *= max_vel / vel_norm;
+
+    // Compute nominal velocity: direction toward target, speed proportional to
+    // distance but capped at max_velocity. vel_gain acts as 1/time_horizon.
+    Eigen::Vector3d displacement = target_pos_world - ee_pos_world;
+    double dist = displacement.norm();
+
+    Eigen::Vector3d nominal_vel;
+    if (dist < 1e-6) {
+        nominal_vel = Eigen::Vector3d::Zero();
+    } else {
+        constexpr double vel_gain = 5.0;
+        double desired_speed = std::min(vel_gain * dist, scp_->config().max_velocity);
+        nominal_vel = (displacement / dist) * desired_speed;
     }
- 
-    // Publish with the commanded velocity so the *other* arm's CBF
-    // sees our intended motion, not our lagging measured velocity.
-    CollisionState self_state;
-    self_state.ee_position = ee_pos_world;
-    self_state.ee_velocity = nominal_vel;   // ← commanded, not measured
-    self_state.weight      = 1.0;
-    scp_->publishState(self_state);
- 
-    CorrectionResult cr = scp_->computeCorrection(nominal_vel, self_state, dt);
- 
+
+    // Use the measured EE state for the CBF (not the target state).
+    // Don't publish here — the state handler publishes the authoritative
+    // measured state to the registry every cycle (see runStateHandler).
+    CollisionState own_state;
+    own_state.ee_position = ee_pos_world;
+    own_state.ee_velocity = ee_vel_world;
+    own_state.weight      = scp_state_.weight;
+
+    constexpr double dt = 1.0 / 100.0;
+    CorrectionResult cr = scp_->computeCorrection(nominal_vel, own_state, dt);
+
     if (cr.active) {
         Eigen::Vector3d safe_vel = nominal_vel + cr.velocity_correction;
+        double safe_norm = safe_vel.norm();
+        if (safe_norm > scp_->config().max_velocity) {
+            safe_vel *= scp_->config().max_velocity / safe_norm;
+        }
+
         Eigen::Vector3d safe_target_world = ee_pos_world + safe_vel * dt;
         T_target.translation() = R_b2w.transpose() * (safe_target_world - T_base_.translation());
- 
-        std::cout << "[SCP] " << name_
-                  << " h=" << cr.barrier_value
-                  << " |corr|=" << cr.velocity_correction.norm()
-                  << " |nom|=" << nominal_vel.norm()
-                  << std::endl;
+
+        std::cout << name_ << " safety filter active. h=" << cr.barrier_value
+                  << " |correction|=" << cr.velocity_correction.norm() << std::endl;
     }
+    // When the filter is NOT active, leave T_target unchanged.
 }
