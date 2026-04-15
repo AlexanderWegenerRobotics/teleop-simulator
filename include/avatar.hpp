@@ -5,6 +5,7 @@
 #include "head_control.hpp"
 #include "network/udp_reliable.hpp"
 #include "sim_env/simulation.hpp"
+#include "self_collision_protection.hpp"
 
 class Avatar{
 
@@ -35,4 +36,5 @@ private:
     std::shared_ptr<Simulation> sim_ = nullptr;
     std::atomic<bool> bRunning;
     std::atomic<SysState> state_;
+    std::shared_ptr<DeviceRegistry> device_registry_; 
 };

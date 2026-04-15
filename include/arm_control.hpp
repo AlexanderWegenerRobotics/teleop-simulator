@@ -12,6 +12,7 @@
 #include "interpolator.hpp"
 #include "network/udp_stream.hpp"
 #include "data_logger.hpp"
+#include "self_collision_protection.hpp"
 #include "common.hpp"
 
 class Simulation;
@@ -28,6 +29,9 @@ public:
     void requestState(SysState state){cmd_state_ = state;}
     SysState getState() const {return state_;}
     Eigen::Isometry3d getTargetPose() const;
+    void initSelfCollisionProtection(std::shared_ptr<DeviceRegistry> registry, const SelfCollisionConfig& config) {
+        scp_ = std::make_unique<SelfCollisionProtection>(name_, std::move(registry), config);
+    }
 
 public:
     std::unique_ptr<franka::Robot> robot;
@@ -56,6 +60,7 @@ private:
     bool isHome();
     Eigen::Isometry3d transformCommandToBase(const Eigen::Isometry3d& T_cmd_world) const;
     Eigen::Isometry3d transformBaseToWorld(const Eigen::Isometry3d& T_base) const;
+    void applySelfCollisionFilter(Eigen::Isometry3d& T_target);
 
 private:
     std::string name_;
@@ -70,6 +75,7 @@ private:
     std::mutex state_mtx;
     franka::RobotState current_state;
     Eigen::Isometry3d T_origin_;
+    std::unique_ptr<SelfCollisionProtection> scp_;
 
 private:
     Vector7 kp_joint_, kd_joint_;

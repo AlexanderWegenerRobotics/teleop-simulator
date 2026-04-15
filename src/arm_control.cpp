@@ -1,6 +1,7 @@
 #include "arm_control.hpp"
 #include "common.hpp"
 #include "interpolator.hpp"
+#include "self_collision_protection.hpp"
 #include "sim_env/model.hpp"
 #include <chrono>
 #include <iostream>
@@ -130,6 +131,7 @@ void ArmControl::runStateHandler(){
                 T_cmd.translation() = pos;
                 T_cmd.linear() = q.toRotationMatrix();
                 Eigen::Isometry3d T_target = transformCommandToBase(T_cmd);
+                applySelfCollisionFilter(T_target);
                 interpolator_.planCartesian(interpolator_.getCurrentCartesian(), T_target, ProfileType::LINEAR);
                 double target_width = (1.0 - static_cast<double>(cmd.gripper)) * 0.08;
                 gripper->setWidth(target_width);
@@ -147,6 +149,19 @@ void ArmControl::runStateHandler(){
             }
             Eigen::Isometry3d T_ee(Eigen::Map<const Eigen::Matrix4d>(rs.O_T_EE.data()));
             Eigen::Quaterniond q_ee(T_ee.rotation());
+
+            if (scp_ && state_ == SysState::ENGAGED) {
+                auto J_array = model->zeroJacobian(rs.q);
+                Matrix6x7 J  = Eigen::Map<Matrix6x7>(J_array.data());
+                Eigen::Map<const Vector7> dq(rs.dq.data());
+                Eigen::Vector3d ee_vel = (J * dq).head<3>();
+
+                CollisionState ds;
+                ds.ee_position = T_base_.rotation() * T_ee.translation() + T_base_.translation();
+                ds.ee_velocity = T_base_.rotation() * ee_vel;
+                ds.weight      = 1.0;
+                scp_->publishState(ds);
+            }
 
             ArmStateMsg state_msg{};
             state_msg.position[0] = static_cast<float>(T_ee.translation().x());
@@ -400,4 +415,52 @@ Eigen::Isometry3d ArmControl::transformBaseToWorld(const Eigen::Isometry3d& T_ba
 
 Eigen::Isometry3d ArmControl::getTargetPose() const{
     return target_pose_;
+}
+
+void ArmControl::applySelfCollisionFilter(Eigen::Isometry3d& T_target) {
+    if (!scp_) return;
+ 
+    Eigen::Isometry3d T_ee;
+    {
+        std::lock_guard<std::mutex> lock(state_mtx);
+        T_ee = Eigen::Isometry3d(Eigen::Map<const Eigen::Matrix4d>(current_state.O_T_EE.data()));
+    }
+ 
+    const Eigen::Matrix3d& R_b2w = T_base_.rotation();
+    Eigen::Vector3d ee_pos_world = R_b2w * T_ee.translation() + T_base_.translation();
+    Eigen::Vector3d target_pos_world = R_b2w * T_target.translation() + T_base_.translation();
+ 
+    // Commanded velocity: direction the operator wants to move.
+    // This is the quantity the CBF will filter.
+    constexpr double dt = 1.0 / 100.0;
+    Eigen::Vector3d nominal_vel = (target_pos_world - ee_pos_world) / dt;
+ 
+    // Clamp to physical limits
+    constexpr double max_vel = 0.5;
+    double vel_norm = nominal_vel.norm();
+    if (vel_norm > max_vel) {
+        nominal_vel *= max_vel / vel_norm;
+    }
+ 
+    // Publish with the commanded velocity so the *other* arm's CBF
+    // sees our intended motion, not our lagging measured velocity.
+    CollisionState self_state;
+    self_state.ee_position = ee_pos_world;
+    self_state.ee_velocity = nominal_vel;   // ← commanded, not measured
+    self_state.weight      = 1.0;
+    scp_->publishState(self_state);
+ 
+    CorrectionResult cr = scp_->computeCorrection(nominal_vel, self_state, dt);
+ 
+    if (cr.active) {
+        Eigen::Vector3d safe_vel = nominal_vel + cr.velocity_correction;
+        Eigen::Vector3d safe_target_world = ee_pos_world + safe_vel * dt;
+        T_target.translation() = R_b2w.transpose() * (safe_target_world - T_base_.translation());
+ 
+        std::cout << "[SCP] " << name_
+                  << " h=" << cr.barrier_value
+                  << " |corr|=" << cr.velocity_correction.norm()
+                  << " |nom|=" << nominal_vel.norm()
+                  << std::endl;
+    }
 }

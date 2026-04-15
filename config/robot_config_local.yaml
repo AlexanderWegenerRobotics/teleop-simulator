@@ -5,6 +5,12 @@ avatar:
     receive_port: 7000
     frequency: 20
 
+  self_collision:
+    enabled: true
+    d_min: 0.04
+    alpha: 10.0
+    beta: 0.10
+
 devices:
   - name: arm_left
     type: arm

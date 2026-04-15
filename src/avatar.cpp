@@ -18,6 +18,21 @@ Avatar::Avatar(const YAML::Node& config) {
         }
     }
 
+    device_registry_ = std::make_shared<DeviceRegistry>();
+
+    SelfCollisionConfig scp_config;
+    if (sys_config["avatar"]["self_collision"]) {
+        auto sc = sys_config["avatar"]["self_collision"];
+        scp_config.d_min   = sc["d_min"].as<double>(0.04);
+        scp_config.alpha   = sc["alpha"].as<double>(1.0);
+        scp_config.beta    = sc["beta"].as<double>(0.10);
+        scp_config.enabled = sc["enabled"].as<bool>(true);
+    }
+
+    for (auto& arm : arm_instances) {
+        arm->initSelfCollisionProtection(device_registry_, scp_config);
+    }
+
     if (sys_config["avatar"]["transmission"]) {
         UdpReliableConfig cmd_cfg;
         cmd_cfg.transport.remote_ip   = sys_config["avatar"]["transmission"]["remote_ip"].as<std::string>();
