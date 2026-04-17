@@ -50,7 +50,6 @@ ArmControl::ArmControl(const YAML::Node& device_config)
     kd_cart_ = yamlToVector<6>(device_config["control"]["kd_cart"]);
     kp_null_ = yamlToVector<7>(device_config["control"]["kp_null"]);
     kd_null_ = yamlToVector<7>(device_config["control"]["kd_null"]);
-    motion_scale_ = device_config["control"]["motion_scale"].as<double>();
 
     if (device_config["transmission"]) {
         UdpStreamConfig stream_cfg;
@@ -60,6 +59,23 @@ ArmControl::ArmControl(const YAML::Node& device_config)
         stream_cfg.send_rate_hz          = device_config["transmission"]["frequency"].as<int>();
         transmission_ = std::make_unique<ArmStream>(stream_cfg);
     }
+
+    workspace_min_ = Eigen::Vector3d(
+        device_config["safety"]["workspace_min"][0].as<double>(),
+        device_config["safety"]["workspace_min"][1].as<double>(),
+        device_config["safety"]["workspace_min"][2].as<double>()
+    );
+    workspace_max_ = Eigen::Vector3d(
+        device_config["safety"]["workspace_max"][0].as<double>(),
+        device_config["safety"]["workspace_max"][1].as<double>(),
+        device_config["safety"]["workspace_max"][2].as<double>()
+    );
+    table_height_world_ = device_config["safety"]["table_height_world"].as<double>();
+    table_safety_margin_ = device_config["safety"]["table_safety_margin"].as<double>();
+    max_command_velocity_ = device_config["safety"]["max_command_velocity"].as<double>();
+    emergency_jump_threshold_ = device_config["safety"]["emergency_jump_threshold"].as<double>();
+    cmd_dt_ = 1.0 / static_cast<double>(device_config["transmission"]["frequency"].as<int>());
+
     logger_ = std::make_unique<DataLogger<ArmLogEntry>>("../log/" + name_ + "_log.csv", armLogHeader, armLogRow);
 }
 
@@ -129,7 +145,7 @@ void ArmControl::runStateHandler(){
                 T_cmd.translation() = pos;
                 T_cmd.linear() = q.toRotationMatrix();
                 Eigen::Isometry3d T_target = transformCommandToBase(T_cmd);
-                // Apply collision filter to the new command target
+                //validateTargetPose(T_target);
                 applySelfCollisionFilter(T_target);
                 interpolator_.planCartesian(interpolator_.getCurrentCartesian(), T_target, ProfileType::LINEAR);
                 double target_width = (1.0 - static_cast<double>(cmd.gripper)) * 0.08;
@@ -137,11 +153,6 @@ void ArmControl::runStateHandler(){
                 target_pose_ = T_base_ * T_target;
                 has_cmd = false;
             } else {
-                // FIX: Even without a new command, re-filter the current interpolator
-                // target against updated peer positions. Without this, the interpolator
-                // keeps driving toward a stale target while the other arm may have moved
-                // closer. This is critical under latency — commands arrive infrequently
-                // but the safety filter must run every cycle.
                 Eigen::Isometry3d T_current_target = interpolator_.getCurrentCartesian();
                 Eigen::Isometry3d T_filtered = T_current_target;
                 applySelfCollisionFilter(T_filtered);
@@ -155,9 +166,6 @@ void ArmControl::runStateHandler(){
             }
         }
 
-        // Publish state to registry and send state back to operator.
-        // Publishing happens here for ALL engaged states, regardless of whether
-        // a command arrived. This ensures the peer arm always has fresh data.
         if (transmission_) {
             franka::RobotState rs;
             {
@@ -224,6 +232,7 @@ void ArmControl::updateStateMachine(SysState cmd_state){
             }
             else if(cmd_state == SysState::ENGAGED){
                 state_ = SysState::ENGAGED;
+                has_prev_valid_target_ = false;
                 std::cout << "[INFO]: " << name_ << " engaged." << std::endl;
             }
             break;
@@ -413,7 +422,7 @@ Eigen::Isometry3d ArmControl::transformCommandToBase(const Eigen::Isometry3d& T_
     Eigen::Matrix3d R_w2b = T_base_.rotation().transpose();
 
     Eigen::Isometry3d T_target = Eigen::Isometry3d::Identity();
-    T_target.translation() = T_origin_.translation() + R_w2b * T_cmd_world.translation() * motion_scale_;
+    T_target.translation() = T_origin_.translation() + R_w2b * T_cmd_world.translation();
     T_target.linear() = T_origin_.rotation() * R_tool * T_cmd_world.rotation() * R_tool.transpose();
 
     return T_target;
@@ -423,7 +432,7 @@ Eigen::Isometry3d ArmControl::transformBaseToWorld(const Eigen::Isometry3d& T_ba
     Eigen::Matrix3d R_b2w = T_base_.rotation();
 
     Eigen::Isometry3d T_world = Eigen::Isometry3d::Identity();
-    T_world.translation() = R_b2w * (T_base.translation() - T_origin_.translation()) / motion_scale_;
+    T_world.translation() = R_b2w * (T_base.translation() - T_origin_.translation());
     T_world.linear() = T_origin_.rotation().transpose() * T_base.rotation();
 
     return T_world;
@@ -452,8 +461,6 @@ void ArmControl::applySelfCollisionFilter(Eigen::Isometry3d& T_target) {
     Eigen::Vector3d ee_vel_world = R_b2w * ee_vel_base;
     Eigen::Vector3d target_pos_world = R_b2w * T_target.translation() + T_base_.translation();
 
-    // Compute nominal velocity: direction toward target, speed proportional to
-    // distance but capped at max_velocity. vel_gain acts as 1/time_horizon.
     Eigen::Vector3d displacement = target_pos_world - ee_pos_world;
     double dist = displacement.norm();
 
@@ -466,9 +473,6 @@ void ArmControl::applySelfCollisionFilter(Eigen::Isometry3d& T_target) {
         nominal_vel = (displacement / dist) * desired_speed;
     }
 
-    // Use the measured EE state for the CBF (not the target state).
-    // Don't publish here — the state handler publishes the authoritative
-    // measured state to the registry every cycle (see runStateHandler).
     CollisionState own_state;
     own_state.ee_position = ee_pos_world;
     own_state.ee_velocity = ee_vel_world;
@@ -486,9 +490,47 @@ void ArmControl::applySelfCollisionFilter(Eigen::Isometry3d& T_target) {
 
         Eigen::Vector3d safe_target_world = ee_pos_world + safe_vel * dt;
         T_target.translation() = R_b2w.transpose() * (safe_target_world - T_base_.translation());
-
-        std::cout << name_ << " safety filter active. h=" << cr.barrier_value
-                  << " |correction|=" << cr.velocity_correction.norm() << std::endl;
     }
-    // When the filter is NOT active, leave T_target unchanged.
+}
+
+void ArmControl::validateTargetPose(Eigen::Isometry3d& T_target) {
+    Eigen::Vector3d p_target = T_target.translation();
+
+    if (!p_target.allFinite()) {
+        if (has_prev_valid_target_) {
+            T_target.translation() = prev_valid_target_pos_;
+        } else {
+            T_target.translation() = interpolator_.getCurrentCartesian().translation();
+        }
+        return;
+    }
+
+    if (has_prev_valid_target_) {
+        Eigen::Vector3d dp = p_target - prev_valid_target_pos_;
+        double jump_norm = dp.norm();
+
+        if (jump_norm > emergency_jump_threshold_) {
+            T_target.translation() = prev_valid_target_pos_;
+            p_target = T_target.translation();
+        } else {
+            double max_jump = max_command_velocity_ * cmd_dt_;
+            if (jump_norm > max_jump && jump_norm > 1e-9) {
+                p_target = prev_valid_target_pos_ + (max_jump / jump_norm) * dp;
+            }
+        }
+    }
+
+    p_target = p_target.cwiseMax(workspace_min_).cwiseMin(workspace_max_);
+
+    Eigen::Vector3d p_world = T_base_.rotation() * p_target + T_base_.translation();
+    double min_world_z = table_height_world_ + table_safety_margin_;
+    if (p_world.z() < min_world_z) {
+        p_world.z() = min_world_z;
+        p_target = T_base_.rotation().transpose() * (p_world - T_base_.translation());
+        p_target = p_target.cwiseMax(workspace_min_).cwiseMin(workspace_max_);
+    }
+
+    T_target.translation() = p_target;
+    prev_valid_target_pos_ = p_target;
+    has_prev_valid_target_ = true;
 }

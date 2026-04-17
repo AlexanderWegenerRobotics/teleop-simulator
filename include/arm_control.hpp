@@ -64,6 +64,7 @@ private:
     Eigen::Isometry3d transformCommandToBase(const Eigen::Isometry3d& T_cmd_world) const;
     Eigen::Isometry3d transformBaseToWorld(const Eigen::Isometry3d& T_base) const;
     void applySelfCollisionFilter(Eigen::Isometry3d& T_target);
+    void validateTargetPose(Eigen::Isometry3d& T_target);
 
 private:
     std::string name_;
@@ -85,6 +86,15 @@ private:
     Vector7 kp_joint_, kd_joint_;
     Eigen::Matrix<double, 6, 1> kp_cart_, kd_cart_;
     Vector7 kp_null_, kd_null_;
-    double motion_scale_ = 3.0;
-    double rotation_scale_ = 1.0;
+
+private:
+    Eigen::Vector3d workspace_min_;
+    Eigen::Vector3d workspace_max_;
+    double table_height_world_;
+    double table_safety_margin_;
+    double max_command_velocity_;
+    double emergency_jump_threshold_;
+    double cmd_dt_;
+    bool has_prev_valid_target_{false};
+    Eigen::Vector3d prev_valid_target_pos_ = Eigen::Vector3d::Zero();
 };
