@@ -13,13 +13,14 @@
 #include "network/udp_stream.hpp"
 #include "data_logger.hpp"
 #include "self_collision_protection.hpp"
+#include "arm_recovery.hpp"
 #include "common.hpp"
 
 class Simulation;
 
 class ArmControl{
 public:
-    ArmControl(const YAML::Node& device_config);
+    ArmControl(const YAML::Node& device_config, const std::string& session_id);
     ~ArmControl();
 
     void start();
@@ -35,6 +36,12 @@ public:
     void setCollisionImportanceWeight(double weight){scp_state_.weight = weight; 
         std::cout << name_ << " weight parameter set to "  << weight << std::endl;
     }
+
+    ArmRecovery& recovery() { return recovery_; }
+    Vector7 getQ0() const { return q0_; }
+    void reOrigin();
+    void markEpisodeStart() { if (logger_) logger_->markEpisodeStart(); }
+    void markEpisodeEnd(const std::string& reason) { if (logger_) logger_->markEpisodeEnd(reason); }
 
 public:
     std::unique_ptr<franka::Robot> robot;
@@ -53,6 +60,7 @@ private:
     std::unique_ptr<ArmStream> transmission_;
     std::unique_ptr<DataLogger<ArmLogEntry>> logger_;
     std::chrono::high_resolution_clock::time_point startTime_;
+    ArmRecovery recovery_;
     
 private:
     void runControlHandler();
@@ -60,6 +68,7 @@ private:
     Vector7 jointImpedanceControl(const franka::RobotState& rs);
     Vector7 cartesianImpedanceControl(const franka::RobotState& rs);
     void updateStateMachine(SysState cmd_state);
+    void updateRecovery();
     bool isHome();
     Eigen::Isometry3d transformCommandToBase(const Eigen::Isometry3d& T_cmd_world) const;
     Eigen::Isometry3d transformBaseToWorld(const Eigen::Isometry3d& T_base) const;
@@ -81,6 +90,8 @@ private:
     Eigen::Isometry3d T_origin_;
     std::unique_ptr<SelfCollisionProtection> scp_;
     CollisionState scp_state_;
+    Vector7 recovery_target_q_ = Vector7::Zero();
+    std::chrono::steady_clock::time_point recovery_start_time_;
 
 private:
     Vector7 kp_joint_, kd_joint_;

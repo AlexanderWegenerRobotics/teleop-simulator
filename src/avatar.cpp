@@ -7,14 +7,20 @@
 Avatar::Avatar(const YAML::Node& config) {
     YAML::Node sys_config = YAML::LoadFile(config["robot_config"].as<std::string>());
 
+    std::string session_id = std::to_string(
+    std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+
     for (const auto& dev : sys_config["devices"]) {
         if (!dev["enabled"].as<bool>(true)) continue;
         std::string type = dev["type"].as<std::string>();
+        std::string name = dev["name"].as<std::string>();
 
         if (type == "arm") {
-            arm_instances.push_back(new ArmControl(dev));
+            arm_instances.push_back(new ArmControl(dev, session_id));
+            device_records_[name] = DeviceRecord{};
         } else if (type == "head") {
-            head_instances.push_back(new HeadControl(dev));
+            head_instances.push_back(new HeadControl(dev, session_id));
+            device_records_[name] = DeviceRecord{};
         }
     }
 
@@ -51,6 +57,73 @@ Avatar::Avatar(const YAML::Node& config) {
             if (it != fields.end()) {
                 cmd_requested_.store(static_cast<SysState>(it->second.as<uint8_t>()));
             }
+        });
+
+        cmd_channel_->registerHandler("arm_reset", [this](const ReliableEnvelope& env, const msgpack::object& payload) {
+            std::map<std::string, msgpack::object> fields;
+            payload.convert(fields);
+            auto it = fields.find("device");
+            if (it == fields.end()) return;
+            std::string dev_name = it->second.as<std::string>();
+
+            ArmControl* arm = getArm(dev_name);
+            if (!arm) return;
+
+            arm->recovery().requestRecovery(RecoveryTrigger::OPERATOR_RESET, arm->getQ0());
+
+            auto rec_it = device_records_.find(dev_name);
+            if (rec_it != device_records_.end())
+                rec_it->second.active = false;
+
+            std::cout << "[AVATAR-INFO]: Reset requested for " << dev_name << std::endl;
+        });
+
+        cmd_channel_->registerHandler("arm_resume", [this](const ReliableEnvelope& env, const msgpack::object& payload) {
+            std::map<std::string, msgpack::object> fields;
+            payload.convert(fields);
+            auto it = fields.find("device");
+            if (it == fields.end()) return;
+            std::string dev_name = it->second.as<std::string>();
+
+            ArmControl* arm = getArm(dev_name);
+            if (!arm || !arm->recovery().isWaitingAck()) return;
+
+            arm->reOrigin();
+            arm->recovery().confirmResume();
+
+            auto rec_it = device_records_.find(dev_name);
+            if (rec_it != device_records_.end())
+                rec_it->second.active = true;
+
+            if (state_ == SysState::ENGAGED) {
+                arm->requestState(SysState::ENGAGED);
+            }
+
+            std::cout << "[AVATAR-INFO]: Resume confirmed for " << dev_name << std::endl;
+        });
+
+        cmd_channel_->registerHandler("reset_all", [this](const ReliableEnvelope& env, const msgpack::object& payload) {
+            std::string reason = "reset_all";
+            if (payload.type == msgpack::type::MAP) {
+                std::map<std::string, msgpack::object> fields;
+                payload.convert(fields);
+                auto it = fields.find("reason");
+                if (it != fields.end())
+                    reason = it->second.as<std::string>();
+            }
+
+            markEpisodeEnd(reason);
+
+            for (auto& arm : arm_instances) {
+                arm->recovery().requestRecovery(RecoveryTrigger::OPERATOR_RESET, arm->getQ0());
+                auto rec_it = device_records_.find(arm->getDeviceName());
+                if (rec_it != device_records_.end())
+                    rec_it->second.active = false;
+            }
+
+            reset_all_pending_.store(true);
+
+            std::cout << "[AVATAR-INFO]: Global reset requested (" << reason << ")" << std::endl;
         });
     }
 
@@ -95,7 +168,6 @@ void Avatar::start(){
     constexpr std::chrono::microseconds control_period(static_cast<int>(1e6 / 100));
 	auto next_control_time = std::chrono::high_resolution_clock::now();
 
-    SysState cmd_state = SysState::IDLE;
     SysState prev_state = SysState::IDLE;
     state_ = SysState::IDLE;
     if (cmd_channel_) cmd_channel_->setState(SysState::IDLE);
@@ -107,7 +179,6 @@ void Avatar::start(){
     while(bRunning){
         SysState cmd_state = cmd_requested_.load();
 
-        // connection watchdog — if operator goes silent, fall back to IDLE
         if (cmd_channel_ && !cmd_channel_->isAlive()) {
             if (state_ != SysState::IDLE && state_ != SysState::OFFLINE) {
                 std::cout << "[AVATAR-WARN]: Operator connection lost, reverting to IDLE." << std::endl;
@@ -120,13 +191,14 @@ void Avatar::start(){
             updateStateMachine(cmd_state);
         }
 
+        processRecoveryNotifications();
+        processResetAllCompletion();
+
         if (state_ != prev_state && cmd_channel_) {
             cmd_channel_->setState(state_);
         }
         prev_state = state_;
 
-
-        // heartbeat
         auto now = std::chrono::steady_clock::now();
         if (cmd_channel_ && std::chrono::duration_cast<std::chrono::milliseconds>(now - last_heartbeat).count() >= 500) {
             msgpack::sbuffer buf;
@@ -159,7 +231,51 @@ void Avatar::stop(){
     bRunning = false;
 }
 
+void Avatar::processRecoveryNotifications() {
+    if (!cmd_channel_) return;
+    for (auto& arm : arm_instances) {
+        if (arm->recovery().needsNotification()) {
+            sendDeviceEvent(arm->getDeviceName(), "reset_complete");
+            arm->recovery().clearNotification();
+        }
+    }
+}
+
+void Avatar::processResetAllCompletion() {
+    if (!reset_all_pending_.load()) return;
+
+    for (auto& arm : arm_instances) {
+        if (!arm->recovery().isWaitingAck()) return;
+    }
+
+    for (auto& arm : arm_instances) {
+        arm->reOrigin();
+        arm->recovery().confirmResume();
+        auto rec_it = device_records_.find(arm->getDeviceName());
+        if (rec_it != device_records_.end())
+            rec_it->second.active = true;
+    }
+
+    state_ = SysState::AWAITING;
+    cmd_requested_.store(SysState::AWAITING);
+    if (cmd_channel_) cmd_channel_->setState(SysState::AWAITING);
+
+    markEpisodeStart();
+
+    reset_all_pending_.store(false);
+
+    std::cout << "[AVATAR-INFO]: Global reset complete, awaiting engagement." << std::endl;
+}
+
+void Avatar::sendDeviceEvent(const std::string& device, const std::string& event) {
+    msgpack::sbuffer buf;
+    msgpack::pack(buf, std::map<std::string, std::string>{{"device", device}, {"event", event}});
+    cmd_channel_->send("device_event", buf, true);
+}
+
 void Avatar::updateStateMachine(SysState cmd_state){
+    if (reset_all_pending_.load()) return;
+
     if(cmd_state == SysState::STOP){
         state_ = SysState::STOP;
     }
@@ -167,7 +283,7 @@ void Avatar::updateStateMachine(SysState cmd_state){
         case SysState::IDLE:
             if(cmd_state == SysState::HOMING){
                 requestAllDevices(SysState::HOMING);
-                state_ = SysState::HOMING;  // transition avatar itself immediately
+                state_ = SysState::HOMING;
                 std::cout << "[AVATAR-INFO]: Homing." << std::endl;
             }
             break;
@@ -191,6 +307,7 @@ void Avatar::updateStateMachine(SysState cmd_state){
             else if(cmd_state == SysState::ENGAGED && allInState(SysState::AWAITING)){
                 requestAllDevices(SysState::ENGAGED);
                 state_ = SysState::ENGAGED;
+                markEpisodeStart();
                 std::cout << "[AVATAR-INFO]: Engage system." << std::endl;
             }
             break;
@@ -199,11 +316,13 @@ void Avatar::updateStateMachine(SysState cmd_state){
             if(cmd_state == SysState::IDLE){
                 requestAllDevices(SysState::IDLE);
                 state_ = SysState::IDLE;
+                markEpisodeEnd("operator_idle");
                 std::cout << "[AVATAR-INFO]: Switch engage -> idle." << std::endl;
             }
             else if(cmd_state == SysState::PAUSED){
                 requestAllDevices(SysState::PAUSED);
                 state_ = SysState::PAUSED;
+                markEpisodeEnd("operator_pause");
                 std::cout << "[AVATAR-INFO]: Switch engage -> pause." << std::endl;
             }
             break;
@@ -227,24 +346,58 @@ void Avatar::updateStateMachine(SysState cmd_state){
 }
 
 bool Avatar::allInState(SysState state) {
-    for (auto& arm  : arm_instances)  if (arm->getState()  != state) return false;
-    for (auto& head : head_instances) if (head->getState() != state) return false;
+    for (auto& arm  : arm_instances) {
+        auto it = device_records_.find(arm->getDeviceName());
+        if (it != device_records_.end() && !it->second.active) continue;
+        if (arm->getState() != state) return false;
+    }
+    for (auto& head : head_instances) {
+        auto it = device_records_.find(head->getDeviceName());
+        if (it != device_records_.end() && !it->second.active) continue;
+        if (head->getState() != state) return false;
+    }
     return true;
 }
 
 bool Avatar::anyoneInState(SysState state) {
-    for (auto& arm  : arm_instances)  if (arm->getState()  == state) return true;
-    for (auto& head : head_instances) if (head->getState() == state) return true;
+    for (auto& arm  : arm_instances) {
+        auto it = device_records_.find(arm->getDeviceName());
+        if (it != device_records_.end() && !it->second.active) continue;
+        if (arm->getState() == state) return true;
+    }
+    for (auto& head : head_instances) {
+        auto it = device_records_.find(head->getDeviceName());
+        if (it != device_records_.end() && !it->second.active) continue;
+        if (head->getState() == state) return true;
+    }
     return false;
 }
 
 void Avatar::requestAllDevices(SysState state) {
-    for (auto& arm  : arm_instances)  arm->requestState(state);
-    for (auto& head : head_instances) head->requestState(state);
+    for (auto& arm  : arm_instances) {
+        auto it = device_records_.find(arm->getDeviceName());
+        if (it != device_records_.end() && !it->second.active) continue;
+        arm->requestState(state);
+    }
+    for (auto& head : head_instances) {
+        auto it = device_records_.find(head->getDeviceName());
+        if (it != device_records_.end() && !it->second.active) continue;
+        head->requestState(state);
+    }
 }
 
 ArmControl* Avatar::getArm(const std::string& name) {
     for (auto& arm : arm_instances)
         if (arm->getDeviceName() == name) return arm;
     return nullptr;
+}
+
+void Avatar::markEpisodeStart() {
+    for (auto& arm  : arm_instances) arm->markEpisodeStart();
+    for (auto& head : head_instances) head->markEpisodeStart();
+}
+
+void Avatar::markEpisodeEnd(const std::string& reason) {
+    for (auto& arm  : arm_instances) arm->markEpisodeEnd(reason);
+    for (auto& head : head_instances) head->markEpisodeEnd(reason);
 }

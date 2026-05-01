@@ -32,7 +32,6 @@ public:
         : name_(device_name) {}
 
     // --- avatar-side interface ---
-
     void requestRecovery(RecoveryTrigger trigger, const Vector7& target_q, bool skip_motion = false) {
         RecoveryRequest req;
         req.valid       = true;
@@ -41,8 +40,14 @@ public:
         req.skip_motion = skip_motion;
         {
             std::lock_guard<std::mutex> lock(mtx_);
-            pending_ = req;
+            pending_     = req;
+            target_q_    = target_q;
         }
+    }
+
+    Vector7 targetQ() {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return target_q_;
     }
 
     void confirmResume() {
@@ -72,6 +77,11 @@ public:
 
     RecoveryMode mode() const {
         return mode_.load();
+    }
+
+    void pushBack(const RecoveryRequest& req) {
+        std::lock_guard<std::mutex> lock(mtx_);
+        pending_ = req;
     }
 
     // --- arm-side interface (called from runStateHandler) ---
@@ -111,4 +121,5 @@ private:
     std::atomic<bool>   notify_pending_{false};
     std::atomic<bool>   notified_{false};
     std::atomic<bool>   resume_requested_{false};
+    Vector7 target_q_ = Vector7::Zero();
 };

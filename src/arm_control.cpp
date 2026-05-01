@@ -6,7 +6,7 @@
 #include <chrono>
 #include <iostream>
 
-ArmControl::ArmControl(const YAML::Node& device_config) 
+ArmControl::ArmControl(const YAML::Node& device_config, const std::string& session_id)
     : robot(std::make_unique<franka::Robot>())
     , gripper(std::make_unique<franka::Gripper>())
     , bRunning(false)
@@ -18,6 +18,7 @@ ArmControl::ArmControl(const YAML::Node& device_config)
         .max_linear_vel = 0.5,
         .max_angular_vel = 0.8
     })
+    , recovery_(device_config["name"].as<std::string>())
 {
     name_ = device_config["name"].as<std::string>();
     
@@ -25,7 +26,7 @@ ArmControl::ArmControl(const YAML::Node& device_config)
     auto ori  = device_config["base_pose"]["orientation"].as<std::vector<double>>();
 
     base_position_ = Eigen::Vector3d(pos[0], pos[1], pos[2]);
-    base_orientation_ = Eigen::Quaterniond(ori[0], ori[1], ori[2], ori[3]);  // w x y z
+    base_orientation_ = Eigen::Quaterniond(ori[0], ori[1], ori[2], ori[3]);
 
     if (name_.find("right") != std::string::npos) {
         R_tool <<  0, -1,  0,
@@ -76,7 +77,8 @@ ArmControl::ArmControl(const YAML::Node& device_config)
     emergency_jump_threshold_ = device_config["safety"]["emergency_jump_threshold"].as<double>();
     cmd_dt_ = 1.0 / static_cast<double>(device_config["transmission"]["frequency"].as<int>());
 
-    logger_ = std::make_unique<DataLogger<ArmLogEntry>>("../log/" + name_ + "_log.csv", armLogHeader, armLogRow);
+    logger_ = std::make_unique<DataLogger<ArmLogEntry>>("../log/" + name_ + "_log.csv", armLogHeader, armLogRow, session_id);
+
 }
 
 ArmControl::~ArmControl(){
@@ -125,7 +127,12 @@ void ArmControl::runStateHandler(){
             has_cmd = true;
         }
 
+        updateRecovery();
         updateStateMachine(cmd_state_);
+
+        if (state_ != SysState::ENGAGED) {
+            has_cmd = false;
+        }
 
         if (state_ == SysState::HOMING && prev_state != SysState::HOMING) {
             {
@@ -145,7 +152,6 @@ void ArmControl::runStateHandler(){
                 T_cmd.translation() = pos;
                 T_cmd.linear() = q.toRotationMatrix();
                 Eigen::Isometry3d T_target = transformCommandToBase(T_cmd);
-                //validateTargetPose(T_target);
                 applySelfCollisionFilter(T_target);
                 interpolator_.planCartesian(interpolator_.getCurrentCartesian(), T_target, ProfileType::LINEAR);
                 double target_width = (1.0 - static_cast<double>(cmd.gripper)) * 0.08;
@@ -157,7 +163,6 @@ void ArmControl::runStateHandler(){
                 Eigen::Isometry3d T_filtered = T_current_target;
                 applySelfCollisionFilter(T_filtered);
 
-                // Only re-plan if the filter actually modified the target
                 double pos_change = (T_filtered.translation() - T_current_target.translation()).norm();
                 if (pos_change > 1e-6) {
                     interpolator_.planCartesian(interpolator_.getCurrentCartesian(), T_filtered, ProfileType::LINEAR);
@@ -175,8 +180,6 @@ void ArmControl::runStateHandler(){
             Eigen::Isometry3d T_ee(Eigen::Map<const Eigen::Matrix4d>(rs.O_T_EE.data()));
             Eigen::Quaterniond q_ee(T_ee.rotation());
 
-            // Publish to collision registry — always when engaged or awaiting,
-            // so the peer arm has position data even before commands flow.
             if (scp_ && (state_ == SysState::ENGAGED || state_ == SysState::AWAITING)) {
                 auto J_array = model->zeroJacobian(rs.q);
                 Matrix6x7 J  = Eigen::Map<Matrix6x7>(J_array.data());
@@ -198,6 +201,7 @@ void ArmControl::runStateHandler(){
             state_msg.quaternion[1] = static_cast<float>(q_ee.x());
             state_msg.quaternion[2] = static_cast<float>(q_ee.y());
             state_msg.quaternion[3] = static_cast<float>(q_ee.z());
+            state_msg.recovering    = (state_ == SysState::RECOVERING) ? 1 : 0;
             transmission_->setSendData(state_msg);
         }
 
@@ -207,7 +211,76 @@ void ArmControl::runStateHandler(){
     }
 }
 
+void ArmControl::updateRecovery() {
+    RecoveryRequest req = recovery_.consumePending();
+    if (req.valid) {
+        Vector7 q_current;
+        {
+            std::lock_guard<std::mutex> lock(state_mtx);
+            q_current = Eigen::Map<const Vector7>(current_state.q.data());
+        }
+        if (q_current.norm() < 1e-6) {
+            recovery_.pushBack(req);
+            return;
+        }
+        recovery_target_q_ = req.target_q;
+        interpolator_.planJoint(q_current, req.target_q, ProfileType::MINJERK);
+        recovery_.setMode(RecoveryMode::MOVING_TO_SAFE);
+        state_ = SysState::RECOVERING;
+        recovery_start_time_ = std::chrono::steady_clock::now();
+        if (transmission_) transmission_->setState(state_);
+        std::cout << "[INFO]: " << name_ << " recovery motion started." << std::endl;
+        return;
+    }
+
+    switch (recovery_.mode()) {
+        case RecoveryMode::MOVING_TO_SAFE: {
+            Vector7 q, dq;
+            {
+                std::lock_guard<std::mutex> lock(state_mtx);
+                q  = Eigen::Map<const Vector7>(current_state.q.data());
+                dq = Eigen::Map<const Vector7>(current_state.dq.data());
+            }
+            Vector7 q_final = recovery_target_q_;
+            bool trajectory_done = interpolator_.isDone();
+            bool arrived = (q_final - q).cwiseAbs().maxCoeff() < 0.3;
+            bool settled = dq.cwiseAbs().maxCoeff() < 0.07;
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - recovery_start_time_).count();
+            bool timed_out = trajectory_done && elapsed > 5;
+            if ((trajectory_done && arrived && settled) || timed_out) {
+                Eigen::Isometry3d T_ee;
+                {
+                    std::lock_guard<std::mutex> lock(state_mtx);
+                    T_ee = Eigen::Isometry3d(Eigen::Map<const Eigen::Matrix4d>(current_state.O_T_EE.data()));
+                }
+                interpolator_.planCartesian(T_ee, T_ee);
+                recovery_.setMode(RecoveryMode::WAITING_ACK);
+                if (timed_out) {
+                    std::cout << "[WARN]: " << name_ << " recovery timed out, residual joint err: "
+                              << (q_final - q).cwiseAbs().maxCoeff() << " rad" << std::endl;
+                } else {
+                    std::cout << "[INFO]: " << name_ << " recovery motion done, awaiting operator." << std::endl;
+                }
+            }
+            break;
+        }
+        case RecoveryMode::WAITING_ACK:
+            if (recovery_.shouldResume()) {
+                recovery_.setMode(RecoveryMode::NONE);
+                state_ = SysState::AWAITING;
+                if (transmission_) transmission_->setState(state_);
+                std::cout << "[INFO]: " << name_ << " recovery complete, awaiting engagement." << std::endl;
+            }
+            break;
+        default:
+            break;
+    }
+}
+
 void ArmControl::updateStateMachine(SysState cmd_state){
+    if (state_ == SysState::RECOVERING) return;
+
     SysState prev = state_;
     if(cmd_state == SysState::STOP){
         state_ = SysState::STOP;
@@ -273,8 +346,10 @@ void ArmControl::runControlHandler(){
                 current_state = robot_state;
             }
             Vector7 ctrl_torque = Vector7::Zero();
+
             switch(state_){
                 case SysState::HOMING:
+                case SysState::RECOVERING:
                     ctrl_torque = jointImpedanceControl(robot_state);
                     break;
 
@@ -284,11 +359,9 @@ void ArmControl::runControlHandler(){
                     break;
 
                 default:
-                    //ctrl_torque = jointImpedanceControl(robot_state);
                     break;
             }
 
-            // rate limit & torque limit
             ctrl_torque = tau_prev_ + (ctrl_torque - tau_prev_).cwiseMax(-tau_rate_max_).cwiseMin(tau_rate_max_);
             ctrl_torque = ctrl_torque.cwiseMax(-tau_max_).cwiseMin(tau_max_);
             tau_prev_ = ctrl_torque;
@@ -297,7 +370,7 @@ void ArmControl::runControlHandler(){
                 double t = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - startTime_).count();
                 Vector7 q_target = Vector7::Zero();
                 Matrix4 T_target = Matrix4::Identity();
-                if(state_ == SysState::HOMING){
+                if(state_ == SysState::HOMING || state_ == SysState::RECOVERING){
                     q_target = interpolator_.getCurrentJoint();
                     T_target = model->forwardKinematics(q_target);
                 }
@@ -340,13 +413,10 @@ Vector7 ArmControl::jointImpedanceControl(const franka::RobotState& rs) {
     Vector7 e = q_target - q;
     Vector7 de = -dq;
 
-    auto mass_array = model->mass(rs.q);
-    Matrix7 M = Eigen::Map<Matrix7>(mass_array.data());
-
     auto coriolis_array = model->coriolis(rs.q, rs.dq);
     Vector7 tau_coriolis = Eigen::Map<Vector7>(coriolis_array.data());
 
-    Vector7 tau = M * (kp_joint_.cwiseProduct(e) + kd_joint_.cwiseProduct(de)) + tau_coriolis;
+    Vector7 tau = kp_joint_.cwiseProduct(e) + kd_joint_.cwiseProduct(de) + tau_coriolis;
 
     return tau;
 }
@@ -533,4 +603,9 @@ void ArmControl::validateTargetPose(Eigen::Isometry3d& T_target) {
     T_target.translation() = p_target;
     prev_valid_target_pos_ = p_target;
     has_prev_valid_target_ = true;
+}
+
+void ArmControl::reOrigin() {
+    std::lock_guard<std::mutex> lock(state_mtx);
+    T_origin_ = Eigen::Isometry3d(Eigen::Map<const Eigen::Matrix4d>(current_state.O_T_EE.data()));
 }

@@ -6,7 +6,7 @@ avatar:
     frequency: 20
 
   self_collision:
-    enabled: true
+    enabled: false
     d_min: 0.10
     alpha: 3.0
     beta: 0.1

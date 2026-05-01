@@ -24,7 +24,7 @@ struct HeadState {
 
 class HeadControl{
 public:
-    HeadControl(const YAML::Node& device_config);
+    HeadControl(const YAML::Node& device_config, const std::string& session_id);
     ~HeadControl();
 
     void start();
@@ -33,6 +33,8 @@ public:
     std::string getDeviceName() const {return name_;}
     void requestState(SysState state){cmd_state_ = state;}
     SysState getState() const {return state_;}
+    void markEpisodeStart() { if (logger_) logger_->markEpisodeStart(); }
+    void markEpisodeEnd(const std::string& reason) { if (logger_) logger_->markEpisodeEnd(reason); }
 
 public:
     std::unique_ptr<franka_joint_driver::Driver> module;

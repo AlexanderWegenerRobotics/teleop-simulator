@@ -37,18 +37,26 @@ template<typename T>
 class DataLogger {
 public:
     DataLogger(const std::string& path,
-               std::function<std::string()>        headerFn,
-               std::function<std::string(const T&)> rowFn)
+               std::function<std::string()>         headerFn,
+               std::function<std::string(const T&)> rowFn,
+               const std::string& session_id)
         : headerFn_(headerFn)
         , rowFn_(rowFn)
+        , session_id_(session_id)
         , bRunning_(false)
         , bEnabled_(false)
         , bHasNewData_(false)
     {
         file_.open(path);
-        if (!file_) {
+        if (!file_)
             throw std::runtime_error("DataLogger: failed to open file: " + path);
-        }
+
+        std::string meta_path = path.substr(0, path.rfind('.')) + "_meta.csv";
+        meta_file_.open(meta_path);
+        if (!meta_file_)
+            throw std::runtime_error("DataLogger: failed to open meta file: " + meta_path);
+        meta_file_ << "session_id;episode_id;event;time_s;reason\n";
+        meta_file_.flush();
     }
 
     ~DataLogger() {
@@ -66,6 +74,7 @@ public:
         bRunning_ = false;
         if (thread_.joinable()) thread_.join();
         file_.close();
+        meta_file_.close();
     }
 
     void enable(bool e) { bEnabled_ = e; }
@@ -77,7 +86,28 @@ public:
         bHasNewData_ = true;
     }
 
+    void markEpisodeStart() {
+        writeMarker("episode_start", "");
+        episode_id_++;
+    }
+
+    void markEpisodeEnd(const std::string& reason) {
+        writeMarker("episode_end", reason);
+    }
+
 private:
+    void writeMarker(const std::string& event, const std::string& reason) {
+        double t = std::chrono::duration<double>(
+            std::chrono::high_resolution_clock::now() - startTime_).count();
+        std::lock_guard<std::mutex> lock(meta_mtx_);
+        meta_file_ << session_id_ << ";"
+                   << episode_id_ << ";"
+                   << event       << ";"
+                   << t           << ";"
+                   << reason      << "\n";
+        meta_file_.flush();
+    }
+
     void run() {
         std::string buffer;
         buffer.reserve(1024 * 1024);
@@ -108,8 +138,10 @@ private:
 private:
     std::function<std::string()>         headerFn_;
     std::function<std::string(const T&)> rowFn_;
+    std::string                          session_id_;
 
     std::ofstream file_;
+    std::ofstream meta_file_;
     std::thread   thread_;
 
     std::atomic<bool> bRunning_;
@@ -117,7 +149,9 @@ private:
     std::atomic<bool> bHasNewData_;
 
     std::mutex mtx_;
+    std::mutex meta_mtx_;
     T          data_{};
+    int        episode_id_ = 0;
 
     std::chrono::high_resolution_clock::time_point startTime_;
 };
@@ -125,28 +159,28 @@ private:
 
 inline std::string armLogHeader() {
     std::string h = "time;";
-    for (int i = 0; i < 7;  ++i) h += "q_"       + std::to_string(i) + ";";
-    for (int i = 0; i < 7;  ++i) h += "q_cmd_"       + std::to_string(i) + ";";
-    for (int i = 0; i < 7;  ++i) h += "dq_"      + std::to_string(i) + ";";
-    for (int i = 0; i < 7;  ++i) h += "tau_J_"   + std::to_string(i) + ";";
-    for (int i = 0; i < 7;  ++i) h += "tau_ext_" + std::to_string(i) + ";";
-    for (int i = 0; i < 16; ++i) h += "O_T_EE_"  + std::to_string(i) + ";";
-    for (int i = 0; i < 16; ++i) h += "O_T_EE_cmd_"  + std::to_string(i) + ";";
-    for (int i = 0; i < 6;  ++i) h += "F_ext_"   + std::to_string(i) + ";";
+    for (int i = 0; i < 7;  ++i) h += "q_"          + std::to_string(i) + ";";
+    for (int i = 0; i < 7;  ++i) h += "q_cmd_"      + std::to_string(i) + ";";
+    for (int i = 0; i < 7;  ++i) h += "dq_"         + std::to_string(i) + ";";
+    for (int i = 0; i < 7;  ++i) h += "tau_J_"      + std::to_string(i) + ";";
+    for (int i = 0; i < 7;  ++i) h += "tau_ext_"    + std::to_string(i) + ";";
+    for (int i = 0; i < 16; ++i) h += "O_T_EE_"     + std::to_string(i) + ";";
+    for (int i = 0; i < 16; ++i) h += "O_T_EE_cmd_" + std::to_string(i) + ";";
+    for (int i = 0; i < 6;  ++i) h += "F_ext_"      + std::to_string(i) + ";";
     h += "state\n";
     return h;
 }
 
 inline std::string armLogRow(const ArmLogEntry& e) {
     std::string r = std::to_string(e.time) + ";";
-    for (auto v : e.q)      r += std::to_string(v) + ";";
+    for (auto v : e.q)          r += std::to_string(v) + ";";
     for (auto v : e.q_cmd)      r += std::to_string(v) + ";";
-    for (auto v : e.dq)     r += std::to_string(v) + ";";
-    for (auto v : e.tau_J)  r += std::to_string(v) + ";";
-    for (auto v : e.tau_ext)r += std::to_string(v) + ";";
-    for (auto v : e.O_T_EE) r += std::to_string(v) + ";";
+    for (auto v : e.dq)         r += std::to_string(v) + ";";
+    for (auto v : e.tau_J)      r += std::to_string(v) + ";";
+    for (auto v : e.tau_ext)    r += std::to_string(v) + ";";
+    for (auto v : e.O_T_EE)     r += std::to_string(v) + ";";
     for (auto v : e.O_T_EE_cmd) r += std::to_string(v) + ";";
-    for (auto v : e.F_ext)  r += std::to_string(v) + ";";
+    for (auto v : e.F_ext)      r += std::to_string(v) + ";";
     r += std::to_string(static_cast<uint8_t>(e.state)) + "\n";
     return r;
 }
@@ -154,7 +188,7 @@ inline std::string armLogRow(const ArmLogEntry& e) {
 inline std::string headLogHeader() {
     std::string h = "time;";
     for (int i = 0; i < 2; ++i) h += "q_"     + std::to_string(i) + ";";
-    for (int i = 0; i < 2; ++i) h += "q_cmd_"     + std::to_string(i) + ";";
+    for (int i = 0; i < 2; ++i) h += "q_cmd_" + std::to_string(i) + ";";
     for (int i = 0; i < 2; ++i) h += "dq_"    + std::to_string(i) + ";";
     for (int i = 0; i < 2; ++i) h += "tau_J_" + std::to_string(i) + ";";
     h += "state\n";
@@ -164,7 +198,7 @@ inline std::string headLogHeader() {
 inline std::string headLogRow(const HeadLogEntry& e) {
     std::string r = std::to_string(e.time) + ";";
     for (auto v : e.q)     r += std::to_string(v) + ";";
-    for (auto v : e.q_cmd)     r += std::to_string(v) + ";";
+    for (auto v : e.q_cmd) r += std::to_string(v) + ";";
     for (auto v : e.dq)    r += std::to_string(v) + ";";
     for (auto v : e.tau_J) r += std::to_string(v) + ";";
     r += std::to_string(static_cast<uint8_t>(e.state)) + "\n";

@@ -5,14 +5,15 @@
 #include <yaml-cpp/yaml.h>
 
 enum class SysState : uint8_t {
-    OFFLINE  = 0,  // not initialized / not connected
-    IDLE     = 1,  // initialized, gravity comp only, waiting
-    HOMING   = 2,  // moving to home configuration
-    AWAITING = 3,  // at home, waiting for operator to engage
-    ENGAGED  = 4,  // actively tracking operator input (your TELEOP)
-    PAUSED   = 5,  // holding current pose, operator temporarily disengaged
-    FAULT    = 6,  // error state, safe torques only
+    OFFLINE  = 0,
+    IDLE     = 1,
+    HOMING   = 2,
+    AWAITING = 3,
+    ENGAGED  = 4,
+    PAUSED   = 5,
+    FAULT    = 6,
     STOP     = 7,
+    RECOVERING = 8,
     UNDEFINED   = 255
 };
 
@@ -48,7 +49,6 @@ inline uint64_t timestamp_ns() {
         std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
 }
 
-
 using Matrix6x7 = Eigen::Matrix<double, 6, 7>;
 using Matrix7   = Eigen::Matrix<double, 7, 7>;
 using Matrix4   = Eigen::Matrix<double, 4, 4>;
@@ -78,6 +78,7 @@ struct ArmStateMsg {
     float quaternion[4];
     float joint_positions[7];
     float tau_ext[7];
+    uint8_t recovering;
 };
  
 struct HeadCommandMsg {
@@ -94,6 +95,10 @@ struct HeadStateMsg {
  
 #pragma pack(pop)
 
+// per-device bookkeeping entry on the avatar side
+struct DeviceRecord {
+    bool active = true;
+};
 
 template<int N>
 Eigen::Matrix<double, N, 1> yamlToVector(const YAML::Node& node) {

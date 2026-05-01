@@ -4,7 +4,7 @@
 
 using namespace franka_joint_driver;
 
-HeadControl::HeadControl(const YAML::Node& device_config)
+HeadControl::HeadControl(const YAML::Node& device_config, const std::string& session_id)
     : bRunning(false)
     , module(std::make_unique<franka_joint_driver::Driver>())
     , state_(SysState::OFFLINE)
@@ -33,7 +33,7 @@ HeadControl::HeadControl(const YAML::Node& device_config)
         stream_cfg.send_rate_hz          = device_config["transmission"]["frequency"].as<int>();
         transmission_ = std::make_unique<HeadStream>(stream_cfg);
     }
-    logger_ = std::make_unique<DataLogger<HeadLogEntry>>("../log/" + name_ + "_log.csv", headLogHeader, headLogRow);
+    logger_ = std::make_unique<DataLogger<HeadLogEntry>>("../log/" + name_ + "_log.csv", headLogHeader, headLogRow, session_id);
 }
 
 HeadControl::~HeadControl(){

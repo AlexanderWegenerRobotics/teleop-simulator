@@ -6,7 +6,7 @@ avatar:
     frequency: 20
 
   self_collision:
-    enabled: true
+    enabled: false
     d_min: 0.04
     alpha: 1.0
     beta: 0.10
@@ -28,7 +28,7 @@ devices:
     max_torque: [87, 87, 87, 87, 12, 12, 12]
     max_torque_rate: [1000, 1000, 1000, 1000, 1000, 1000, 1000]
     control:
-      kp_joint: [600, 600, 600, 600, 250, 150, 50]
+      kp_joint: [900, 600, 600, 600, 250, 150, 50]
       kd_joint: [50,  50,  50,  50,  30,  25,  15]
       kp_cart: [1000, 1000, 1000, 80, 80, 80]
       kd_cart: [70, 70, 70, 10, 10, 10]
