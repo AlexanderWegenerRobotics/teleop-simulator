@@ -2,6 +2,7 @@
 #include "common.hpp"
 #include "interpolator.hpp"
 #include "self_collision_protection.hpp"
+#include "sim_env/gripper.hpp"
 #include "sim_env/model.hpp"
 #include <chrono>
 #include <iostream>
@@ -205,6 +206,8 @@ void ArmControl::runStateHandler(){
             transmission_->setSendData(state_msg);
         }
 
+        gripper_width_.store(gripper->readOnce().width);
+
         prev_state = state_;
         next_control_time += control_period;
         std::this_thread::sleep_until(next_control_time);
@@ -382,6 +385,7 @@ void ArmControl::runControlHandler(){
                 ArmLogEntry entry{};
                 entry.time  = t;
                 entry.state = state_;
+                entry.gripper_width = gripper_width_.load();
                 std::copy(robot_state.q.begin(),                    robot_state.q.end(),                    entry.q.begin());
                 Eigen::Map<Vector7>(entry.q_cmd.data()) = q_target;
                 std::copy(robot_state.dq.begin(),                   robot_state.dq.end(),                   entry.dq.begin());

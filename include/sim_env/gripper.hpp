@@ -44,6 +44,7 @@ private:
     Simulation*  sim_  = nullptr;
     std::string  name_;
     std::atomic<bool> bStop_{false};
+    std::atomic<double> commanded_width_{0.0};
 };
 
 }

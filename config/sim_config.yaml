@@ -90,7 +90,7 @@ objects:
   - name: target_right
     type: mocap
     model_path: "../models/mujoco/props/target_frame.xml"
-    enabled: True
+    enabled: False
     pose:
       position: [0, 0, 0]
       orientation: [1, 0, 0, 0]
@@ -98,7 +98,7 @@ objects:
   - name: target_left
     type: mocap
     model_path: "../models/mujoco/props/target_frame.xml"
-    enabled: True
+    enabled: False
     pose:
       position: [0, 0, 0]
       orientation: [1, 0, 0, 0]

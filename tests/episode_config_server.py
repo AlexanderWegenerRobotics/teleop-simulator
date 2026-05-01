@@ -37,15 +37,15 @@ LISTEN_HOST = "127.0.0.1"
 LISTEN_PORT = 9100          # Avatar sends requests here
 
 # Workspace bounds (world frame, metres) — tune to your table / arm reach
-PICK_X_RANGE  = (0.45, 0.70)
-PICK_Y_RANGE  = (-0.35, 0.35)
+PICK_X_RANGE  = (0.55, 0.90)
+PICK_Y_RANGE  = (-0.05, 0.35)
 PICK_Z        = 0.62          # table surface + half box height, fixed
 
-PLACE_X_RANGE = (0.45, 0.70)
-PLACE_Y_RANGE = (-0.35, 0.35)
-PLACE_Z       = 0.62  # same height as pick
+PLACE_X_RANGE = (0.65, 0.90)
+PLACE_Y_RANGE = (-0.05, 0.35)
+PLACE_Z       = 0.5  # same height as pick
 
-MIN_PICK_PLACE_DIST = 0.15    # metres — avoid degenerate episodes
+MIN_PICK_PLACE_DIST = 0.10    # metres — avoid degenerate episodes
 
 # Task mode distribution
 # 0 = unimanual (left arm only)

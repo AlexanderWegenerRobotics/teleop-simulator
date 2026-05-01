@@ -11,6 +11,7 @@
 #include "network/udp_reliable.hpp"
 #include "sim_env/simulation.hpp"
 #include "self_collision_protection.hpp"
+#include "data_logger.hpp"
 
 class Avatar{
 
@@ -42,6 +43,7 @@ private:
 	std::vector<HeadControl*> head_instances;
     std::unique_ptr<UdpReliable> cmd_channel_;
     std::atomic<SysState> cmd_requested_{SysState::IDLE};
+    std::unique_ptr<DataLogger<SceneLogEntry>> scene_logger_;
 
     std::shared_ptr<Simulation> sim_ = nullptr;
     std::atomic<bool> bRunning;

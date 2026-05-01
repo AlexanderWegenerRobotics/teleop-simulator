@@ -94,6 +94,7 @@ private:
     CollisionState scp_state_;
     Vector7 recovery_target_q_ = Vector7::Zero();
     std::chrono::steady_clock::time_point recovery_start_time_;
+    std::atomic<double> gripper_width_{0.0};
 
 private:
     Vector7 kp_joint_, kd_joint_;

@@ -21,6 +21,7 @@ struct ArmLogEntry {
     std::array<double, 16> O_T_EE;
     std::array<double, 16> O_T_EE_cmd;
     std::array<double, 6>  F_ext;
+    double                 gripper_width;
     SysState               state;
 };
 
@@ -209,6 +210,7 @@ inline std::string armLogHeader() {
     for (int i = 0; i < 16; ++i) h += "O_T_EE_"     + std::to_string(i) + ";";
     for (int i = 0; i < 16; ++i) h += "O_T_EE_cmd_" + std::to_string(i) + ";";
     for (int i = 0; i < 6;  ++i) h += "F_ext_"      + std::to_string(i) + ";";
+    h += "gripper_width;";
     h += "state\n";
     return h;
 }
@@ -223,6 +225,7 @@ inline std::string armLogRow(const ArmLogEntry& e) {
     for (auto v : e.O_T_EE)     r += std::to_string(v) + ";";
     for (auto v : e.O_T_EE_cmd) r += std::to_string(v) + ";";
     for (auto v : e.F_ext)      r += std::to_string(v) + ";";
+    r += std::to_string(e.gripper_width) + ";";
     r += std::to_string(static_cast<uint8_t>(e.state)) + "\n";
     return r;
 }
@@ -244,5 +247,33 @@ inline std::string headLogRow(const HeadLogEntry& e) {
     for (auto v : e.dq)    r += std::to_string(v) + ";";
     for (auto v : e.tau_J) r += std::to_string(v) + ";";
     r += std::to_string(static_cast<uint8_t>(e.state)) + "\n";
+    return r;
+}
+
+struct SceneLogEntry {
+    double time;
+    double object_x, object_y, object_z;
+    double object_qw, object_qx, object_qy, object_qz;
+    double pick_x, pick_y, pick_z;
+    double place_x, place_y, place_z;
+    int    mode;
+};
+
+inline std::string sceneLogHeader() {
+    return "time;"
+           "object_x;object_y;object_z;"
+           "object_qw;object_qx;object_qy;object_qz;"
+           "pick_x;pick_y;pick_z;"
+           "place_x;place_y;place_z;"
+           "mode\n";
+}
+
+inline std::string sceneLogRow(const SceneLogEntry& e) {
+    std::string r = std::to_string(e.time) + ";";
+    r += std::to_string(e.object_x)  + ";" + std::to_string(e.object_y)  + ";" + std::to_string(e.object_z)  + ";";
+    r += std::to_string(e.object_qw) + ";" + std::to_string(e.object_qx) + ";" + std::to_string(e.object_qy) + ";" + std::to_string(e.object_qz) + ";";
+    r += std::to_string(e.pick_x)    + ";" + std::to_string(e.pick_y)    + ";" + std::to_string(e.pick_z)    + ";";
+    r += std::to_string(e.place_x)   + ";" + std::to_string(e.place_y)   + ";" + std::to_string(e.place_z)   + ";";
+    r += std::to_string(e.mode) + "\n";
     return r;
 }

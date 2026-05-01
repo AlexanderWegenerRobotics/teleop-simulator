@@ -514,3 +514,25 @@ void Simulation::setFreeBodyPose(const std::string& bodyName, const Eigen::Vecto
 
     mj_forward(model, data);
 }
+
+bool Simulation::getFreeBodyPose(const std::string& bodyName, Eigen::Vector3d& pos, Eigen::Quaterniond& quat) {
+    int body_id = mj_name2id(model, mjOBJ_BODY, bodyName.c_str());
+    if (body_id < 0) return false;
+
+    int jnt_id = -1;
+    for (int j = 0; j < model->njnt; ++j) {
+        if (model->jnt_bodyid[j] == body_id && model->jnt_type[j] == mjJNT_FREE) {
+            jnt_id = j; break;
+        }
+    }
+    if (jnt_id < 0) return false;
+
+    int qadr = model->jnt_qposadr[jnt_id];
+    int r        = snap_read_.load(std::memory_order_acquire);
+    mjData* snap = snap_[r];
+
+    pos = Eigen::Vector3d(snap->qpos[qadr+0], snap->qpos[qadr+1], snap->qpos[qadr+2]);
+    quat = Eigen::Quaterniond(snap->qpos[qadr+3], snap->qpos[qadr+4],
+                               snap->qpos[qadr+5], snap->qpos[qadr+6]);
+    return true;
+}

@@ -1,6 +1,7 @@
 #include "avatar.hpp"
 #include "common.hpp"
 #include "network/udp_reliable.hpp"
+#include "data_logger.hpp"
 
 #include <iostream>
 #include <filesystem>
@@ -190,6 +191,8 @@ void Avatar::start(){
     constexpr std::chrono::microseconds control_period(static_cast<int>(1e6 / 100));
 	auto next_control_time = std::chrono::high_resolution_clock::now();
 
+    auto loop_start_time = std::chrono::high_resolution_clock::now();
+
     SysState prev_state = SysState::IDLE;
     state_ = SysState::IDLE;
     if (cmd_channel_) cmd_channel_->setState(SysState::IDLE);
@@ -235,6 +238,32 @@ void Avatar::start(){
                 std::string side = dev.substr(dev.find('_') + 1);
                 sim_->setFramePose("target_" + side + "_frame", T.translation(), Eigen::Quaterniond(T.rotation()));
             }
+
+            if (scene_logger_) {
+                Eigen::Vector3d obj_pos;
+                Eigen::Quaterniond obj_quat;
+                if (sim_->getFreeBodyPose("box_1_box", obj_pos, obj_quat)) {
+                    double t = std::chrono::duration<double>(
+                        std::chrono::high_resolution_clock::now() - loop_start_time).count();
+                    SceneLogEntry entry{};
+                    entry.time      = t;
+                    entry.object_x  = obj_pos.x();
+                    entry.object_y  = obj_pos.y();
+                    entry.object_z  = obj_pos.z();
+                    entry.object_qw = obj_quat.w();
+                    entry.object_qx = obj_quat.x();
+                    entry.object_qy = obj_quat.y();
+                    entry.object_qz = obj_quat.z();
+                    entry.pick_x    = current_episode_cfg_.pick_x;
+                    entry.pick_y    = current_episode_cfg_.pick_y;
+                    entry.pick_z    = current_episode_cfg_.pick_z;
+                    entry.place_x   = current_episode_cfg_.place_x;
+                    entry.place_y   = current_episode_cfg_.place_y;
+                    entry.place_z   = current_episode_cfg_.place_z;
+                    entry.mode      = current_episode_cfg_.mode;
+                    scene_logger_->write(entry);
+                }
+            }
         #endif
 
         next_control_time += control_period;
@@ -243,6 +272,10 @@ void Avatar::start(){
 }
 
 void Avatar::stop(){
+    if (scene_logger_) {
+        scene_logger_->enable(false);
+        scene_logger_->stop();
+    }
     for(const auto& head : head_instances){
         head->stop();
     }
@@ -323,6 +356,14 @@ void Avatar::startNewEpisodeFolder() {
         head->restartLogger(path);
     }
 
+    if (scene_logger_) {
+        scene_logger_->stop();
+        scene_logger_.reset();
+    }
+    scene_logger_ = std::make_unique<DataLogger<SceneLogEntry>>(
+        folder + "/scene.csv", sceneLogHeader, sceneLogRow, session_id_);
+    scene_logger_->start();
+
     std::cout << "[AVATAR-INFO]: New episode folder: " << folder << std::endl;
 }
 
@@ -367,6 +408,7 @@ void Avatar::processResetAllCompletion() {
     cmd_requested_.store(SysState::ENGAGED);
     if (cmd_channel_) cmd_channel_->setState(SysState::ENGAGED);
     requestAllDevices(SysState::ENGAGED);
+    if (scene_logger_) scene_logger_->enable(true);
 
     markEpisodeStart();
 
@@ -420,6 +462,7 @@ void Avatar::updateStateMachine(SysState cmd_state){
             else if(cmd_state == SysState::ENGAGED && allInState(SysState::AWAITING)){
                 requestAllDevices(SysState::ENGAGED);
                 state_ = SysState::ENGAGED;
+                if (scene_logger_) scene_logger_->enable(true);
                 std::cout << "[AVATAR-INFO]: Engage system." << std::endl;
             }
             break;
@@ -428,12 +471,14 @@ void Avatar::updateStateMachine(SysState cmd_state){
             if(cmd_state == SysState::IDLE){
                 requestAllDevices(SysState::IDLE);
                 state_ = SysState::IDLE;
+                if (scene_logger_) scene_logger_->enable(false);
                 markEpisodeEnd("operator_idle");
                 std::cout << "[AVATAR-INFO]: Switch engage -> idle." << std::endl;
             }
             else if(cmd_state == SysState::PAUSED){
                 requestAllDevices(SysState::PAUSED);
                 state_ = SysState::PAUSED;
+                if (scene_logger_) scene_logger_->enable(false);
                 markEpisodeEnd("operator_pause");
                 std::cout << "[AVATAR-INFO]: Switch engage -> pause." << std::endl;
             }
