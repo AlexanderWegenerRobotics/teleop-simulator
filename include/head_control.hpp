@@ -35,6 +35,8 @@ public:
     SysState getState() const {return state_;}
     void markEpisodeStart() { if (logger_) logger_->markEpisodeStart(); }
     void markEpisodeEnd(const std::string& reason) { if (logger_) logger_->markEpisodeEnd(reason); }
+    void restartLogger(const std::string& path);
+    void writeEpisodeConfig(double px, double py, double pz, double gx, double gy, double gz, int mode);
 
 public:
     std::unique_ptr<franka_joint_driver::Driver> module;

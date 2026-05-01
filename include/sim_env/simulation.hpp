@@ -38,6 +38,7 @@ public:
     DeviceState getDeviceState(const std::string& deviceName);
     void setDeviceActive(const std::string& deviceName, bool state);
     void setFramePose(const std::string& name, const Eigen::Vector3d& pos, const Eigen::Quaterniond& quat);
+    void setFreeBodyPose(const std::string& bodyName, const Eigen::Vector3d& pos, const Eigen::Quaterniond& quat);
 
 private:
     mjModel* model = nullptr;

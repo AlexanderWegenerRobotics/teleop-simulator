@@ -473,3 +473,44 @@ void Simulation::setFramePose(const std::string& name, const Eigen::Vector3d& po
     data->mocap_quat[id * 4 + 2] = quat.y();
     data->mocap_quat[id * 4 + 3] = quat.z();
 }
+
+void Simulation::setFreeBodyPose(const std::string& bodyName, const Eigen::Vector3d& pos, const Eigen::Quaterniond& quat){
+    // Find the body by name
+    int body_id = mj_name2id(model, mjOBJ_BODY, bodyName.c_str());
+    if (body_id < 0) {
+        std::cerr << "[Simulation] setFreeBodyPose: body '" << bodyName << "' not found\n";
+        return;
+    }
+
+    // Find the freejoint attached to this body (must be the first joint)
+    int jnt_id = -1;
+    for (int j = 0; j < model->njnt; ++j) {
+        if (model->jnt_bodyid[j] == body_id && model->jnt_type[j] == mjJNT_FREE) {
+            jnt_id = j;
+            break;
+        }
+    }
+    if (jnt_id < 0) {
+        std::cerr << "[Simulation] setFreeBodyPose: body '" << bodyName << "' has no freejoint\n";
+        return;
+    }
+
+    int qadr = model->jnt_qposadr[jnt_id];
+
+    std::lock_guard<std::mutex> lock(data_mtx);
+    // Position (3 values)
+    data->qpos[qadr + 0] = pos.x();
+    data->qpos[qadr + 1] = pos.y();
+    data->qpos[qadr + 2] = pos.z();
+    // Quaternion — MuJoCo stores w,x,y,z
+    data->qpos[qadr + 3] = quat.w();
+    data->qpos[qadr + 4] = quat.x();
+    data->qpos[qadr + 5] = quat.y();
+    data->qpos[qadr + 6] = quat.z();
+    // Zero out velocities so the body doesn't carry momentum from last episode
+    int vadr = model->jnt_dofadr[jnt_id];
+    for (int i = 0; i < 6; ++i)
+        data->qvel[vadr + i] = 0.0;
+
+    mj_forward(model, data);
+}

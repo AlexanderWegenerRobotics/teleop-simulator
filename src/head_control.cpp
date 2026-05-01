@@ -259,3 +259,11 @@ bool HeadControl::isHome() {
     return (q0_ - q).cwiseAbs().maxCoeff() < 0.05 
         && dq.cwiseAbs().maxCoeff() < 0.03;
 }
+
+void HeadControl::restartLogger(const std::string& path) {
+    logger_->restart(path);
+}
+
+void HeadControl::writeEpisodeConfig(double px, double py, double pz, double gx, double gy, double gz, int mode) {
+    logger_->writeEpisodeConfig(px, py, pz, gx, gy, gz, mode);
+}

@@ -609,3 +609,11 @@ void ArmControl::reOrigin() {
     std::lock_guard<std::mutex> lock(state_mtx);
     T_origin_ = Eigen::Isometry3d(Eigen::Map<const Eigen::Matrix4d>(current_state.O_T_EE.data()));
 }
+
+void ArmControl::restartLogger(const std::string& path) {
+    logger_->restart(path);
+}
+
+void ArmControl::writeEpisodeConfig(double px, double py, double pz, double gx, double gy, double gz, int mode) {
+    logger_->writeEpisodeConfig(px, py, pz, gx, gy, gz, mode);
+}

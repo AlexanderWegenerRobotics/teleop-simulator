@@ -2,6 +2,10 @@
 #include <atomic>
 #include <unordered_map>
 
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
 #include "arm_control.hpp"
 #include "head_control.hpp"
 #include "network/udp_reliable.hpp"
@@ -45,4 +49,20 @@ private:
     std::shared_ptr<DeviceRegistry> device_registry_;
     std::unordered_map<std::string, DeviceRecord> device_records_;
     std::atomic<bool> reset_all_pending_{false};
+
+    std::string      session_id_;
+    std::string      log_base_dir_;
+    int              episode_sock_  = -1;
+    int              episode_index_ = 0;
+
+    struct EpisodeConfig {
+        double pick_x, pick_y, pick_z;
+        double place_x, place_y, place_z;
+        int    mode;
+    };
+    EpisodeConfig current_episode_cfg_{};
+
+    EpisodeConfig requestEpisodeConfig();
+    void          startNewEpisodeFolder();
+    void applyEpisodeConfig(const EpisodeConfig& cfg);
 };

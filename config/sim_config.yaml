@@ -73,19 +73,19 @@ objects:
       position: [0.8, 0.0, 0.6]
       orientation: [1, 0, 0, 0]
 
-  - name: box_2
-    type: dynamic
-    model_path: "../models/mujoco/props/box_green.xml"
-    pose:
-      position: [0.8, 0.3, 0.6]
-      orientation: [1, 0, 0, 0]
+  #- name: box_2
+  #  type: dynamic
+  #  model_path: "../models/mujoco/props/box_green.xml"
+  #  pose:
+  #    position: [0.8, 0.3, 0.6]
+  #    orientation: [1, 0, 0, 0]
 
-  - name: box_3
-    type: dynamic
-    model_path: "../models/mujoco/props/box_blue.xml"
-    pose:
-      position: [0.8, -0.3, 0.6]
-      orientation: [1, 0, 0, 0]
+  #- name: box_3
+  #  type: dynamic
+  #  model_path: "../models/mujoco/props/box_blue.xml"
+  #  pose:
+  #    position: [0.8, -0.3, 0.6]
+  #    orientation: [1, 0, 0, 0]
 
   - name: target_right
     type: mocap
@@ -96,6 +96,14 @@ objects:
       orientation: [1, 0, 0, 0]
 
   - name: target_left
+    type: mocap
+    model_path: "../models/mujoco/props/target_frame.xml"
+    enabled: True
+    pose:
+      position: [0, 0, 0]
+      orientation: [1, 0, 0, 0]
+
+  - name: place_pose
     type: mocap
     model_path: "../models/mujoco/props/target_frame.xml"
     enabled: True

@@ -47,21 +47,10 @@ public:
         , bEnabled_(false)
         , bHasNewData_(false)
     {
-        file_.open(path);
-        if (!file_)
-            throw std::runtime_error("DataLogger: failed to open file: " + path);
-
-        std::string meta_path = path.substr(0, path.rfind('.')) + "_meta.csv";
-        meta_file_.open(meta_path);
-        if (!meta_file_)
-            throw std::runtime_error("DataLogger: failed to open meta file: " + meta_path);
-        meta_file_ << "session_id;episode_id;event;time_s;reason\n";
-        meta_file_.flush();
+        openFiles(path);
     }
 
-    ~DataLogger() {
-        stop();
-    }
+    ~DataLogger() { stop(); }
 
     void start() {
         file_ << headerFn_();
@@ -75,6 +64,26 @@ public:
         if (thread_.joinable()) thread_.join();
         file_.close();
         meta_file_.close();
+    }
+
+    // Close current files, open new ones at new_path, restart logging thread.
+    // Call this between episodes when you want a fresh file in a new folder.
+    void restart(const std::string& new_path) {
+        // Stop logging thread and flush
+        bEnabled_ = false;
+        bRunning_ = false;
+        if (thread_.joinable()) thread_.join();
+        file_.close();
+        meta_file_.close();
+
+        episode_id_ = 0;
+        openFiles(new_path);
+
+        file_ << headerFn_();
+        bRunning_ = true;
+        startTime_ = std::chrono::high_resolution_clock::now();
+        thread_ = std::thread(&DataLogger::run, this);
+        bEnabled_ = true; 
     }
 
     void enable(bool e) { bEnabled_ = e; }
@@ -95,16 +104,52 @@ public:
         writeMarker("episode_end", reason);
     }
 
-private:
-    void writeMarker(const std::string& event, const std::string& reason) {
+    // Write episode config (pick/place pose, mode) to meta file once per episode
+    void writeEpisodeConfig(double pick_x, double pick_y, double pick_z,
+                            double place_x, double place_y, double place_z,
+                            int mode)
+    {
         double t = std::chrono::duration<double>(
             std::chrono::high_resolution_clock::now() - startTime_).count();
         std::lock_guard<std::mutex> lock(meta_mtx_);
         meta_file_ << session_id_ << ";"
                    << episode_id_ << ";"
+                   << "episode_config" << ";"
+                   << t << ";"
+                   << "" << ";"   // reason column (empty for config)
+                   << pick_x  << ";" << pick_y  << ";" << pick_z  << ";"
+                   << place_x << ";" << place_y << ";" << place_z << ";"
+                   << mode << "\n";
+        meta_file_.flush();
+    }
+
+private:
+    void openFiles(const std::string& path) {
+        file_.open(path);
+        if (!file_)
+            throw std::runtime_error("DataLogger: failed to open file: " + path);
+
+        std::string meta_path = path.substr(0, path.rfind('.')) + "_meta.csv";
+        meta_file_.open(meta_path);
+        if (!meta_file_)
+            throw std::runtime_error("DataLogger: failed to open meta file: " + meta_path);
+
+        // Extended header: includes episode config columns
+        meta_file_ << "session_id;episode_id;event;time_s;reason;"
+                      "pick_x;pick_y;pick_z;place_x;place_y;place_z;mode\n";
+        meta_file_.flush();
+    }
+
+    void writeMarker(const std::string& event, const std::string& reason) {
+        double t = std::chrono::duration<double>(
+            std::chrono::high_resolution_clock::now() - startTime_).count();
+        std::lock_guard<std::mutex> lock(meta_mtx_);
+        // Pad the config columns with empty fields for non-config events
+        meta_file_ << session_id_ << ";"
+                   << episode_id_ << ";"
                    << event       << ";"
                    << t           << ";"
-                   << reason      << "\n";
+                   << reason      << ";;;;;;;\n";
         meta_file_.flush();
     }
 
@@ -112,7 +157,6 @@ private:
         std::string buffer;
         buffer.reserve(1024 * 1024);
         int rowCount = 0;
-
         while (bRunning_) {
             if (bHasNewData_ && bEnabled_) {
                 T snapshot;
@@ -130,12 +174,10 @@ private:
             }
             std::this_thread::sleep_for(std::chrono::microseconds(500));
         }
-
         if (!buffer.empty())
             file_.write(buffer.data(), buffer.size());
     }
 
-private:
     std::function<std::string()>         headerFn_;
     std::function<std::string(const T&)> rowFn_;
     std::string                          session_id_;
