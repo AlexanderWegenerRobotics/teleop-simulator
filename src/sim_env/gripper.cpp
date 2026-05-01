@@ -69,9 +69,9 @@ bool Gripper::move(double width, double speed) {
     return moveToWidth(width, speed, 0.005, 0.005, false);
 }
 
-bool Gripper::grasp(double width, double speed, double force,
-                     double epsilon_inner, double epsilon_outer) {
-    return moveToWidth(width, speed, epsilon_inner, epsilon_outer, true);
+bool Gripper::grasp(double width, double speed, double force, double epsilon_inner, double epsilon_outer) {
+    double squeeze_width = width - 0.005;
+    return moveToWidth(squeeze_width, speed, epsilon_inner, epsilon_outer, true);
 }
 
 bool Gripper::stop() {

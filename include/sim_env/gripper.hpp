@@ -23,8 +23,7 @@ public:
 
     bool homing();
     bool move(double width, double speed);
-    bool grasp(double width, double speed, double force,
-               double epsilon_inner = 0.005, double epsilon_outer = 0.005);
+    bool grasp(double width, double speed, double force, double epsilon_inner = 0.005, double epsilon_outer = 0.005);
     bool stop();
 
     void setWidth(double width);
