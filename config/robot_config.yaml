@@ -87,7 +87,7 @@ devices:
     base_pose:
       position: [0, 0, 1.2]
       orientation: [1, 0, 0, 0]
-    q0: [0.0, -0.4]
+    q0: [0.0, -0.7]
     max_torque: [20, 20]
     max_torque_rate: [1000, 1000]
     control:

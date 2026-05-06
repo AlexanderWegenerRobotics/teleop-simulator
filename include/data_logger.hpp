@@ -87,7 +87,9 @@ public:
         bEnabled_ = true; 
     }
 
-    void enable(bool e) { bEnabled_ = e; }
+    void enable(bool e) { 
+        bEnabled_ = e; 
+    }
 
     void write(const T& data) {
         if (!bEnabled_) return;
@@ -167,7 +169,7 @@ private:
                     bHasNewData_ = false;
                 }
                 buffer += rowFn_(snapshot);
-                if (++rowCount >= 500) {
+                if (++rowCount >= 50) {
                     file_.write(buffer.data(), buffer.size());
                     buffer.clear();
                     rowCount = 0;
