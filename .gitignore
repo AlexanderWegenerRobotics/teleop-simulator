@@ -9,7 +9,6 @@ cmake_install.cmake
 .cache/
 **/.cache/
 
-launch.sh
 .vs/
 
 log/
