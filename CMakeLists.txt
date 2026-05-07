@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
-cmake_policy(SET CMP0167 NEW)
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.27")
+    cmake_policy(SET CMP0167 NEW)
+endif()
 project(avatar VERSION 0.1.0)
 include(${CMAKE_SOURCE_DIR}/cmake/options.cmake)
 
@@ -17,7 +19,9 @@ find_package(Eigen3 REQUIRED)
 find_package(Poco REQUIRED COMPONENTS Net Foundation)
 find_package(PkgConfig REQUIRED)
 find_package(msgpack-cxx REQUIRED)
-find_package(realsense2 REQUIRED)
+if(BUILD_STREAMER)
+    find_package(realsense2 REQUIRED)
+endif()
 
 if(BUILD_WITH_MUJOCO)
     find_package(tinyxml2 REQUIRED)
@@ -25,8 +29,8 @@ if(BUILD_WITH_MUJOCO)
     set(MUJOCO_ROOT "$ENV{HOME}/Workspace/tools/mujoco")
     add_library(mujoco SHARED IMPORTED)
     set_target_properties(mujoco PROPERTIES
-        IMPORTED_LOCATION "${MUJOCO_ROOT}/Versions/Current/libmujoco.3.2.0.dylib"
-        INTERFACE_INCLUDE_DIRECTORIES "${MUJOCO_ROOT}"
+        IMPORTED_LOCATION "${MUJOCO_ROOT}/lib/libmujoco.so.3.2.0"
+        INTERFACE_INCLUDE_DIRECTORIES "${MUJOCO_ROOT}/include"
     )
     set(COAL_DISABLE_HPP_FCL_WARNINGS ON CACHE BOOL "" FORCE)
     find_package(pinocchio REQUIRED)
