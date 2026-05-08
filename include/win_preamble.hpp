@@ -12,4 +12,5 @@
     #include <winsock2.h>
     #include <ws2tcpip.h>
     #include <windows.h>
+    #include <timeapi.h>
 #endif

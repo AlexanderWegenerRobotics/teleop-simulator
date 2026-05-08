@@ -14,7 +14,7 @@ HeadControl::HeadControl(const YAML::Node& device_config, const std::string& ses
         .comm_freq      = device_config["transmission"]["frequency"].as<int>(),
         .n_dof          = 2,
         .max_linear_vel = 0.1,
-        .max_angular_vel = 1.5
+        .max_angular_vel = 8.0
     })
 {
     name_ = device_config["name"].as<std::string>();
@@ -63,7 +63,7 @@ void HeadControl::stop(){
 }
 
 void HeadControl::runStateHandler(){
-    constexpr std::chrono::microseconds control_period(static_cast<int>(1e6 / 100));
+    constexpr std::chrono::microseconds control_period(static_cast<int>(1e6 / 200));
     auto next_control_time = std::chrono::high_resolution_clock::now();
 
     SysState prev_state = state_;

@@ -27,6 +27,7 @@ static void sigHandler(int) {
 int main() {
 #ifdef _WIN32
     SetConsoleCtrlHandler(ctrlHandler, TRUE);
+    timeBeginPeriod(1);
 #else
     signal(SIGINT,  sigHandler);
     signal(SIGTERM, sigHandler);

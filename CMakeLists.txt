@@ -147,7 +147,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 
 if(WIN32)
     # Winsock (required by Poco::Net and our UDP code)
-    target_link_libraries(${PROJECT_NAME} PRIVATE ws2_32 mswsock)
+    # winmm: timeBeginPeriod/timeEndPeriod for 1ms timer resolution
+    target_link_libraries(${PROJECT_NAME} PRIVATE ws2_32 mswsock winmm)
 endif()
 
 if(NOT WIN32)
