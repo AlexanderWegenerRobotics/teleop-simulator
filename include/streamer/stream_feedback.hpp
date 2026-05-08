@@ -17,10 +17,20 @@ struct FrameTimestamp {
     uint64_t sender_timestamp_ns;
 };
 
+#ifdef _MSC_VER
+#pragma pack(push, 1)
+#endif
 struct StreamStatusMsg {
     uint32_t magic;
     uint8_t  state;
     uint64_t timestamp_ns;
-} __attribute__((packed));
+}
+#ifndef _MSC_VER
+__attribute__((packed))
+#endif
+;
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 
 static constexpr uint32_t kStreamStatusMagic = 0x53545354;

@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <functional>
 #include <mutex>
@@ -128,6 +129,9 @@ public:
 
 private:
     void openFiles(const std::string& path) {
+        std::filesystem::path p(path);
+        if (p.has_parent_path())
+            std::filesystem::create_directories(p.parent_path());
         file_.open(path);
         if (!file_)
             throw std::runtime_error("DataLogger: failed to open file: " + path);

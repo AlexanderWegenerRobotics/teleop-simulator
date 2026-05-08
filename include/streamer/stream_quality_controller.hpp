@@ -8,6 +8,7 @@
 #include <functional>
 
 #include "streamer/stream_feedback.hpp"
+#include "network/platform_socket.hpp"
 
 enum class StreamState {
     NO_RECEIVER,
@@ -83,7 +84,7 @@ private:
     void run();
     void processReport(const StreamFeedbackMsg& report);
     void updateState();
-    void sendStatusHeartbeat(int fd);
+    void sendStatusHeartbeat(socket_t fd);
     StreamQualityParams paramsForState(StreamState state) const;
 
     StreamQualityConfig config_;

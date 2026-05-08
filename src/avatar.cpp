@@ -5,9 +5,7 @@
 
 #include <iostream>
 #include <filesystem>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
+#include "network/platform_socket.hpp"
 
 Avatar::Avatar(const YAML::Node& config) {
     YAML::Node sys_config = YAML::LoadFile(config["robot_config"].as<std::string>());
@@ -49,15 +47,23 @@ Avatar::Avatar(const YAML::Node& config) {
     getArm("arm_left")->setCollisionImportanceWeight(1.0);
 
     log_base_dir_ = "logs";
-    if (sys_config["avatar"]["log_dir"])
+    if (sys_config["avatar"]["log_dir"]){
+        std::cout << "Found log dir" << std::endl;
         log_base_dir_ = sys_config["avatar"]["log_dir"].as<std::string>();
+    }
     std::filesystem::create_directories(log_base_dir_);
 
     episode_sock_ = socket(AF_INET, SOCK_DGRAM, 0);
+#ifdef _WIN32
+    DWORD timeout_ms = 1000;
+    setsockopt(episode_sock_, SOL_SOCKET, SO_RCVTIMEO,
+               reinterpret_cast<const char*>(&timeout_ms), sizeof(timeout_ms));
+#else
     struct timeval tv{};
     tv.tv_sec  = 1;
     tv.tv_usec = 0;
     setsockopt(episode_sock_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+#endif
 
     if (sys_config["avatar"]["transmission"]) {
         UdpReliableConfig cmd_cfg;
@@ -174,8 +180,8 @@ Avatar::Avatar(const YAML::Node& config) {
 }
 
 Avatar::~Avatar() {
-    if (episode_sock_ >= 0)
-        close(episode_sock_);
+    if (episode_sock_ != kInvalidSocket)
+        close_socket(episode_sock_);
 }
 
 void Avatar::start(){
@@ -272,6 +278,7 @@ void Avatar::start(){
 }
 
 void Avatar::stop(){
+    bRunning = false;
     if (scene_logger_) {
         scene_logger_->enable(false);
         scene_logger_->stop();
@@ -283,7 +290,6 @@ void Avatar::stop(){
         arm->stop();
     }
     if (cmd_channel_) cmd_channel_->stop();
-    bRunning = false;
 }
 
 void Avatar::processRecoveryNotifications() {
@@ -304,13 +310,13 @@ Avatar::EpisodeConfig Avatar::requestEpisodeConfig() {
 
     msgpack::sbuffer req_buf;
     msgpack::pack(req_buf, std::map<std::string, std::string>{{"type", "request_episode_config"}});
-    sendto(episode_sock_, req_buf.data(), req_buf.size(), 0,
-           (sockaddr*)&server_addr, sizeof(server_addr));
+    sendto(episode_sock_, req_buf.data(), static_cast<int>(req_buf.size()), 0,
+           reinterpret_cast<sockaddr*>(&server_addr), static_cast<int>(sizeof(server_addr)));
 
     char recv_buf[1024];
-    socklen_t addr_len = sizeof(server_addr);
-    ssize_t n = recvfrom(episode_sock_, recv_buf, sizeof(recv_buf), 0,
-                         (sockaddr*)&server_addr, &addr_len);
+    socklen_t addr_len = static_cast<socklen_t>(sizeof(server_addr));
+    ssize_t n = recvfrom(episode_sock_, recv_buf, static_cast<int>(sizeof(recv_buf)), 0,
+                         reinterpret_cast<sockaddr*>(&server_addr), &addr_len);
 
     EpisodeConfig cfg{};
     cfg.pick_x  = 0.65; cfg.pick_y  =  0.10; cfg.pick_z  = 0.62;

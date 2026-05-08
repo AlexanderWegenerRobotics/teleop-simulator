@@ -3,12 +3,16 @@
 #include <iostream>
 #include <cstring>
 
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <poll.h>
+#include "network/platform_socket.hpp"
+
+#ifdef _WIN32
+    // WSAPoll mirrors POSIX poll; pollfd is WSAPOLLFD but layout-compatible
+    #define poll WSAPoll
+#else
+    #include <unistd.h>
+    #include <fcntl.h>
+    #include <poll.h>
+#endif
 
 
 StreamQualityController::StreamQualityController(const StreamQualityConfig& config)
@@ -79,62 +83,74 @@ StreamQualityParams StreamQualityController::paramsForState(StreamState state) c
 }
 
 void StreamQualityController::run() {
-    int recv_fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (recv_fd < 0) {
+    socket_t recv_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (recv_fd == kInvalidSocket) {
         std::cerr << "[QualityController] socket creation failed" << std::endl;
         return;
     }
 
+    // Set non-blocking
+#ifdef _WIN32
+    u_long nb = 1;
+    ioctlsocket(recv_fd, FIONBIO, &nb);
+#else
     int flags = fcntl(recv_fd, F_GETFL, 0);
     fcntl(recv_fd, F_SETFL, flags | O_NONBLOCK);
+#endif
 
     sockaddr_in addr{};
     addr.sin_family      = AF_INET;
-    addr.sin_port        = htons(config_.listen_port);
+    addr.sin_port        = htons(static_cast<u_short>(config_.listen_port));
     addr.sin_addr.s_addr = inet_addr(config_.listen_ip.c_str());
 
     if (bind(recv_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
         std::cerr << "[QualityController] bind failed on port " << config_.listen_port << std::endl;
-        close(recv_fd);
+        close_socket(recv_fd);
         return;
     }
 
-    int send_fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (send_fd < 0) {
+    socket_t send_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (send_fd == kInvalidSocket) {
         std::cerr << "[QualityController] send socket creation failed" << std::endl;
-        close(recv_fd);
+        close_socket(recv_fd);
         return;
     }
 
     sockaddr_in dest{};
     dest.sin_family      = AF_INET;
-    dest.sin_port        = htons(config_.status_port);
+    dest.sin_port        = htons(static_cast<u_short>(config_.status_port));
     dest.sin_addr.s_addr = inet_addr(config_.status_host.c_str());
 
     if (connect(send_fd, reinterpret_cast<sockaddr*>(&dest), sizeof(dest)) < 0) {
         std::cerr << "[QualityController] connect failed for status destination" << std::endl;
-        close(recv_fd);
-        close(send_fd);
+        close_socket(recv_fd);
+        close_socket(send_fd);
         return;
     }
 
     std::cout << "[QualityController] listening on " << config_.listen_ip
               << ":" << config_.listen_port << std::endl;
-    std::cout << "[QualityController] status heartbeat → "
+    std::cout << "[QualityController] status heartbeat -> "
               << config_.status_host << ":" << config_.status_port << std::endl;
 
     last_heartbeat_time_ = std::chrono::steady_clock::now();
 
     while (bRunning_) {
         struct pollfd pfd{};
-        pfd.fd     = recv_fd;
+#ifdef _WIN32
+        pfd.fd = static_cast<SOCKET>(recv_fd);
+#else
+        pfd.fd = recv_fd;
+#endif
         pfd.events = POLLIN;
 
         int ret = poll(&pfd, 1, 100);
         if (ret > 0 && (pfd.revents & POLLIN)) {
             StreamFeedbackMsg report{};
-            ssize_t n = recv(recv_fd, &report, sizeof(report), 0);
-            if (n == sizeof(StreamFeedbackMsg)) {
+            ssize_t n = recv(recv_fd,
+                             reinterpret_cast<char*>(&report),
+                             static_cast<int>(sizeof(report)), 0);
+            if (n == static_cast<ssize_t>(sizeof(StreamFeedbackMsg))) {
                 processReport(report);
             }
         }
@@ -151,11 +167,11 @@ void StreamQualityController::run() {
         }
     }
 
-    close(recv_fd);
-    close(send_fd);
+    close_socket(recv_fd);
+    close_socket(send_fd);
 }
 
-void StreamQualityController::sendStatusHeartbeat(int fd) {
+void StreamQualityController::sendStatusHeartbeat(socket_t fd) {
     StreamStatusMsg msg{};
     msg.magic        = kStreamStatusMagic;
     msg.state        = static_cast<uint8_t>(getState());
@@ -163,7 +179,7 @@ void StreamQualityController::sendStatusHeartbeat(int fd) {
         std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count());
 
-    send(fd, &msg, sizeof(msg), 0);
+    send(fd, reinterpret_cast<const char*>(&msg), static_cast<int>(sizeof(msg)), 0);
 }
 
 void StreamQualityController::processReport(const StreamFeedbackMsg& report) {

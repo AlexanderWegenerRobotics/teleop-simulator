@@ -27,7 +27,7 @@ Simulation::Simulation(const YAML::Node& config) {
     cameras_ = std::move(scene.cameras);
 
     char err[2000] = {};
-    model = mj_loadXML(scene.xml_path.c_str(), nullptr, err, sizeof(err));
+    model = mj_loadXML(scene.xml_path.string().c_str(), nullptr, err, sizeof(err));
     if (!model)
         throw std::runtime_error(std::string("mj_loadXML failed: ") + err);
 
@@ -93,6 +93,8 @@ void Simulation::start() {
     }
 
     model_thread = std::thread(&Simulation::run_model, this);
+    while (!bModelIsRunning)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     std::cout << "[INFO]: Simulation started." << std::endl;
 }
 
@@ -267,7 +269,9 @@ void Simulation::initOffscreenStreaming() {
     mjr_defaultContext(&stream_con_);
     mjr_makeContext(model, &stream_con_, mjFONTSCALE_100);
 
+#ifndef _WIN32
     shm_unlink("/avatar_cam");
+#endif
     shm_writer_ = std::make_unique<SharedMemoryWriter>("/avatar_cam", stream_width_, stream_height_);
 }
 
@@ -306,7 +310,11 @@ void Simulation::run_streaming() {
     try {
         initOffscreenStreaming();
     } catch (const std::exception& e) {
-        std::cerr << "[Streaming] " << e.what() << "\n";
+        std::cerr << "[Streaming] Init failed: " << e.what() << "\n";
+        bStreamingIsRunning = true;
+        return;
+    } catch (...) {
+        std::cerr << "[Streaming] Init failed: unknown exception\n";
         bStreamingIsRunning = true;
         return;
     }
@@ -317,7 +325,15 @@ void Simulation::run_streaming() {
     auto next   = std::chrono::steady_clock::now();
 
     while (bStreamingIsRunning) {
-        renderStreamFrame();
+        try {
+            renderStreamFrame();
+        } catch (const std::exception& e) {
+            std::cerr << "[Streaming] Frame error: " << e.what() << "\n";
+            break;
+        } catch (...) {
+            std::cerr << "[Streaming] Frame error: unknown exception\n";
+            break;
+        }
         next += period;
         std::this_thread::sleep_until(next);
     }

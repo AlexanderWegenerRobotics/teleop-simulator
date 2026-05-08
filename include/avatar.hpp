@@ -2,9 +2,7 @@
 #include <atomic>
 #include <unordered_map>
 
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
+#include "network/platform_socket.hpp"
 
 #include "arm_control.hpp"
 #include "head_control.hpp"
@@ -54,7 +52,7 @@ private:
 
     std::string      session_id_;
     std::string      log_base_dir_;
-    int              episode_sock_  = -1;
+    socket_t         episode_sock_  = kInvalidSocket;
     int              episode_index_ = 0;
 
     struct EpisodeConfig {

@@ -3,13 +3,35 @@
 #include <chrono>
 #include <thread>
 #include <cmath>
+#include <atomic>
+#include <csignal>
 
 #include <GLFW/glfw3.h>
 #include <yaml-cpp/yaml.h>
 
 #include "avatar.hpp"
 
+static std::atomic<bool> g_shutdown_requested{false};
+
+#ifdef _WIN32
+static BOOL WINAPI ctrlHandler(DWORD) {
+    g_shutdown_requested.store(true);
+    return TRUE;
+}
+#else
+static void sigHandler(int) {
+    g_shutdown_requested.store(true);
+}
+#endif
+
 int main() {
+#ifdef _WIN32
+    SetConsoleCtrlHandler(ctrlHandler, TRUE);
+#else
+    signal(SIGINT,  sigHandler);
+    signal(SIGTERM, sigHandler);
+#endif
+
     try {
         YAML::Node config = YAML::LoadFile("../config/config.yaml");
 
@@ -43,8 +65,13 @@ int main() {
         std::thread avatar_thread([&]() {
             avatar.start();
         });
+        std::cout << "Avatar started" << std::endl;
 
         while (sim->isRunning()) {
+            if (g_shutdown_requested.load()) {
+                sim->stop();
+                break;
+            }
             if (sim->window_ && glfwWindowShouldClose(sim->window_)) {
                 sim->stop();
                 break;
@@ -52,6 +79,7 @@ int main() {
             glfwPollEvents();
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
+        std::cout << "Avatar will be stopped" << std::endl;
         avatar.stop();
         sim->stop();
 

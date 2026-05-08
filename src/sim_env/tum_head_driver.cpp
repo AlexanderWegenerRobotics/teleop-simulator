@@ -29,8 +29,13 @@ Driver::Error Driver::control(const Driver::CallbackFunctionTorque& driver_callb
 
     sim->setDeviceActive(name_, true);
     Driver::Error return_val = Driver::Error::kNoError;
-    while (bRunning) 
+    while (bRunning)
     {
+        if (!sim->isRunning()) {
+            bRunning = false;
+            break;
+        }
+
         DeviceState device_state = sim->getDeviceState(name_);
         
         for (size_t i = 0; i < 2; ++i) {
