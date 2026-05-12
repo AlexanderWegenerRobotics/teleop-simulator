@@ -10,6 +10,8 @@
 #include "sim_env/simulation.hpp"
 #include "self_collision_protection.hpp"
 #include "data_logger.hpp"
+#include "intention/intention_buffer.hpp"
+#include "intention/intention_recognizer.hpp"
 
 class Avatar{
 
@@ -65,4 +67,7 @@ private:
     EpisodeConfig requestEpisodeConfig();
     void          startNewEpisodeFolder();
     void applyEpisodeConfig(const EpisodeConfig& cfg);
+
+    std::unique_ptr<IntentionBuffer>     intention_buffer_;
+    std::unique_ptr<IntentionRecognizer> intention_recognizer_;
 };

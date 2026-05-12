@@ -197,6 +197,14 @@ void VideoStreamer::pushFrame(const uint8_t* rgb, uint32_t width, uint32_t heigh
         ts_row[bit * 3 + 2] = val;
     }
 
+    uint8_t* id_row = ts_row + row_bytes;
+    for (int bit = 0; bit < 64; ++bit) {
+        uint8_t val = ((frame_count_ >> bit) & 1) ? 255 : 0;
+        id_row[bit * 3 + 0] = val;
+        id_row[bit * 3 + 1] = val;
+        id_row[bit * 3 + 2] = val;
+    }
+
     gst_buffer_unmap(buffer, &map);
 
     gst_app_src_push_buffer(GST_APP_SRC(appsrc_), buffer);

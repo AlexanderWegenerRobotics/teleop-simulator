@@ -92,6 +92,10 @@ devices:
     control:
       kp_joint: [50, 50]
       kd_joint: [5, 5]
+    camera:
+      name: head_head_cam
+      position: [0.05, 0.0, 0.035]
+      euler_xyz: [1.5708, -1.5708, 0.0]
 
   - name: hand_left
     type: gripper

@@ -37,6 +37,8 @@ public:
     void start();
     void stop();
 
+    uint64_t frameId() const { return frame_count_; }
+
 private:
     void buildPipeline();
     void pushFrame(const uint8_t* rgb, uint32_t width, uint32_t height);

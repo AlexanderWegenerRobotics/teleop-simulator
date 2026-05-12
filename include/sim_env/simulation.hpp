@@ -15,6 +15,7 @@
 
 #include "streamer/shared_memory.hpp"
 #include "sim_env/scene_builder.hpp"
+#include "intention/intention_sample.hpp"
 
 struct DeviceState {
     std::vector<double> q;
@@ -40,6 +41,8 @@ public:
     void setFramePose(const std::string& name, const Eigen::Vector3d& pos, const Eigen::Quaterniond& quat);
     void setFreeBodyPose(const std::string& bodyName, const Eigen::Vector3d& pos, const Eigen::Quaterniond& quat);
     bool getFreeBodyPose(const std::string& bodyName, Eigen::Vector3d& pos, Eigen::Quaterniond& quat);
+    CameraIntrinsics getCameraIntrinsics(const std::string& cam_name) const;
+    uint64_t         getFrameId() const { return stream_frame_count_.load(); }
 
 private:
     mjModel* model = nullptr;
@@ -99,7 +102,8 @@ private:
     int         stream_height_ = 720;
     int         stream_fps_    = 30;
     std::thread stream_thread_;
-    std::atomic<bool> bStreamingIsRunning{false};
+    std::atomic<bool>     bStreamingIsRunning{false};
+    std::atomic<uint64_t> stream_frame_count_{0};
 
     void run_streaming();
     void initOffscreenStreaming();

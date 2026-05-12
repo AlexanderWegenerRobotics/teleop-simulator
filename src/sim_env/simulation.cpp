@@ -327,6 +327,7 @@ void Simulation::run_streaming() {
     while (bStreamingIsRunning) {
         try {
             renderStreamFrame();
+            stream_frame_count_.fetch_add(1, std::memory_order_relaxed);
         } catch (const std::exception& e) {
             std::cerr << "[Streaming] Frame error: " << e.what() << "\n";
             break;
@@ -551,4 +552,24 @@ bool Simulation::getFreeBodyPose(const std::string& bodyName, Eigen::Vector3d& p
     quat = Eigen::Quaterniond(snap->qpos[qadr+3], snap->qpos[qadr+4],
                                snap->qpos[qadr+5], snap->qpos[qadr+6]);
     return true;
+}
+
+CameraIntrinsics Simulation::getCameraIntrinsics(const std::string& cam_name) const {
+    int cam_id = mj_name2id(model, mjOBJ_CAMERA, cam_name.c_str());
+    if (cam_id < 0)
+        throw std::runtime_error("[Simulation] getCameraIntrinsics: camera '" + cam_name + "' not found");
+
+    // fovy is stored in radians in mjModel
+    float fovy_rad = static_cast<float>(model->cam_fovy[cam_id]) * static_cast<float>(M_PI) / 180.0f;
+    float fy = (stream_height_ / 2.0f) / std::tan(fovy_rad / 2.0f);
+    float fx = fy;  // square pixels in MuJoCo
+
+    return CameraIntrinsics{
+        .fx     = fx,
+        .fy     = fy,
+        .cx     = stream_width_  / 2.0f,
+        .cy     = stream_height_ / 2.0f,
+        .width  = stream_width_,
+        .height = stream_height_
+    };
 }

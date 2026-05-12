@@ -109,6 +109,23 @@ public:
     }
 
     // Write episode config (pick/place pose, mode) to meta file once per episode
+    void writeAnnotation(const std::string& label, uint8_t atype,
+                         float confidence, float score, uint64_t frame_id) {
+        double t = std::chrono::duration<double>(
+            std::chrono::high_resolution_clock::now() - startTime_).count();
+        std::lock_guard<std::mutex> lock(meta_mtx_);
+        meta_file_ << session_id_ << ";"
+                   << episode_id_ << ";"
+                   << "annotation" << ";"
+                   << t << ";"
+                   << label << ";"
+                   << static_cast<int>(atype) << ";"
+                   << confidence << ";"
+                   << score << ";"
+                   << frame_id << "\n";
+        meta_file_.flush();
+    }
+
     void writeEpisodeConfig(double pick_x, double pick_y, double pick_z,
                             double place_x, double place_y, double place_z,
                             int mode)

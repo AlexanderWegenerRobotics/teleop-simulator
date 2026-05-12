@@ -115,6 +115,8 @@ set(SOURCES
     src/interpolator.cpp
     src/network/udp_transport.cpp
     src/network/udp_reliable.cpp
+    src/intention/intention_buffer.cpp
+    src/intention/intention_recognizer.cpp
 )
 
 if(BUILD_WITH_MUJOCO)

@@ -2,6 +2,7 @@
 #include "common.hpp"
 #include "network/udp_reliable.hpp"
 #include "data_logger.hpp"
+#include "intention/annotation_msg.hpp"
 
 #include <iostream>
 #include <filesystem>
@@ -150,6 +151,24 @@ Avatar::Avatar(const YAML::Node& config) {
 
             std::cout << "[AVATAR-INFO]: Global reset requested (" << reason << ")" << std::endl;
         });
+
+        cmd_channel_->registerHandler("annotation", [this](const ReliableEnvelope& env, const msgpack::object& payload) {
+            AnnotationMsg ann;
+            payload.convert(ann);
+            if (scene_logger_)
+                scene_logger_->writeAnnotation(ann.label, ann.atype, ann.confidence, ann.score, ann.frame_id);
+            std::cout << "[AVATAR-INFO]: annotation frame=" << ann.frame_id
+                      << " label=" << ann.label
+                      << " type=" << static_cast<int>(ann.atype)
+                      << " conf=" << ann.confidence << "\n";
+        });
+
+        cmd_channel_->registerHandler("gaze_sample", [this](const ReliableEnvelope& env, const msgpack::object& payload) {
+            if (!intention_buffer_) return;
+            GazeSampleMsg gaze;
+            payload.convert(gaze);
+            intention_buffer_->fuseGaze(gaze);
+        });
     }
 
 #ifndef WITH_FRANKA
@@ -176,6 +195,40 @@ Avatar::Avatar(const YAML::Node& config) {
 
     current_episode_cfg_ = requestEpisodeConfig();
     applyEpisodeConfig(current_episode_cfg_);
+
+    for (const auto& dev : sys_config["devices"]) {
+        if (dev["type"].as<std::string>() != "head") continue;
+        if (!dev["camera"]) continue;
+
+        auto cam = dev["camera"];
+        auto pos = cam["position"].as<std::vector<double>>();
+        auto eul = cam["euler_xyz"].as<std::vector<double>>();
+
+        CameraExtrinsics extrinsics;
+        extrinsics.position    = Eigen::Vector3d(pos[0], pos[1], pos[2]);
+        extrinsics.orientation =
+            Eigen::AngleAxisd(eul[2], Eigen::Vector3d::UnitZ()) *
+            Eigen::AngleAxisd(eul[1], Eigen::Vector3d::UnitY()) *
+            Eigen::AngleAxisd(eul[0], Eigen::Vector3d::UnitX());
+
+        CameraIntrinsics intrinsics = sim_->getCameraIntrinsics(cam["name"].as<std::string>());
+
+        IntentionBufferConfig buf_cfg;
+        buf_cfg.intrinsics = intrinsics;
+        buf_cfg.extrinsics = extrinsics;
+
+        intention_buffer_ = std::make_unique<IntentionBuffer>(buf_cfg);
+
+        IntentionRecognizerConfig rec_cfg;
+        rec_cfg.log_path   = log_base_dir_ + "/intention_log.csv";
+        rec_cfg.session_id = session_id_;
+        intention_recognizer_ = std::make_unique<IntentionRecognizer>(rec_cfg);
+
+        intention_buffer_->setCallback([this](const IntentionSample& s) {
+            if (intention_recognizer_) intention_recognizer_->push(s);
+        });
+        break;
+    }
 #endif
 }
 
@@ -245,6 +298,55 @@ void Avatar::start(){
                 sim_->setFramePose("target_" + side + "_frame", T.translation(), Eigen::Quaterniond(T.rotation()));
             }
 
+            if (intention_buffer_) {
+                StateSnapshot snap;
+                snap.frame_id    = sim_->getFrameId();
+                snap.timestamp_ns = static_cast<uint64_t>(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count());
+
+                for (auto& arm : arm_instances) {
+                    std::string side = arm->getDeviceName().substr(arm->getDeviceName().find('_') + 1);
+                    if (side == "left")  snap.T_ee_left  = arm->getTargetPose();
+                    if (side == "right") snap.T_ee_right = arm->getTargetPose();
+                }
+
+                snap.gripper_left  = static_cast<float>(sim_->getGripperWidth("hand_left"));
+                snap.gripper_right = static_cast<float>(sim_->getGripperWidth("hand_right"));
+
+                DeviceState head_state = sim_->getDeviceState("head");
+                if (head_state.q.size() >= 2) {
+                    snap.head_pan  = static_cast<float>(head_state.q[0]);
+                    snap.head_tilt = static_cast<float>(head_state.q[1]);
+                }
+
+                Eigen::Vector3d obj_pos;
+                Eigen::Quaterniond obj_quat;
+                if (sim_->getFreeBodyPose("box_1_box", obj_pos, obj_quat)) {
+                    ObjectSlot s;
+                    s.name    = "box_1";
+                    s.type    = SlotType::PICK_OBJ;
+                    s.T_world = Eigen::Isometry3d::Identity();
+                    s.T_world.translation() = obj_pos;
+                    s.T_world.linear()      = obj_quat.toRotationMatrix();
+                    snap.slots.push_back(std::move(s));
+                }
+
+                {
+                    ObjectSlot s;
+                    s.name    = "place_pose";
+                    s.type    = SlotType::PLACE_POSE;
+                    s.T_world = Eigen::Isometry3d::Identity();
+                    s.T_world.translation() = Eigen::Vector3d(
+                        current_episode_cfg_.place_x,
+                        current_episode_cfg_.place_y,
+                        current_episode_cfg_.place_z);
+                    snap.slots.push_back(std::move(s));
+                }
+
+                intention_buffer_->snapshot(snap);
+            }
+
             if (scene_logger_) {
                 Eigen::Vector3d obj_pos;
                 Eigen::Quaterniond obj_quat;
@@ -279,6 +381,7 @@ void Avatar::start(){
 
 void Avatar::stop(){
     bRunning = false;
+    if (intention_recognizer_) intention_recognizer_->stop();
     if (scene_logger_) {
         scene_logger_->enable(false);
         scene_logger_->stop();
@@ -369,6 +472,9 @@ void Avatar::startNewEpisodeFolder() {
     scene_logger_ = std::make_unique<DataLogger<SceneLogEntry>>(
         folder + "/scene.csv", sceneLogHeader, sceneLogRow, session_id_);
     scene_logger_->start();
+
+    if (intention_recognizer_)
+        intention_recognizer_->restartLogger(folder + "/intention_log.csv");
 
     std::cout << "[AVATAR-INFO]: New episode folder: " << folder << std::endl;
 }
