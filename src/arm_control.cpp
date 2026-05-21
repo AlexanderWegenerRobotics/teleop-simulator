@@ -179,7 +179,6 @@ void ArmControl::runStateHandler(){
                 rs = current_state;
             }
             Eigen::Isometry3d T_ee(Eigen::Map<const Eigen::Matrix4d>(rs.O_T_EE.data()));
-            Eigen::Quaterniond q_ee(T_ee.rotation());
 
             if (scp_ && (state_ == SysState::ENGAGED || state_ == SysState::AWAITING)) {
                 auto J_array = model->zeroJacobian(rs.q);
@@ -194,6 +193,8 @@ void ArmControl::runStateHandler(){
                 scp_->publishState(ds);
             }
 
+            T_ee = transformBaseToWorld(T_ee);
+            Eigen::Quaterniond q_ee(T_ee.rotation());
             ArmStateMsg state_msg{};
             state_msg.position[0] = static_cast<float>(T_ee.translation().x());
             state_msg.position[1] = static_cast<float>(T_ee.translation().y());
@@ -248,8 +249,7 @@ void ArmControl::updateRecovery() {
             bool trajectory_done = interpolator_.isDone();
             bool arrived = (q_final - q).cwiseAbs().maxCoeff() < 0.3;
             bool settled = dq.cwiseAbs().maxCoeff() < 0.07;
-            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::steady_clock::now() - recovery_start_time_).count();
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - recovery_start_time_).count();
             bool timed_out = trajectory_done && elapsed > 5;
             if ((trajectory_done && arrived && settled) || timed_out) {
                 Eigen::Isometry3d T_ee;
